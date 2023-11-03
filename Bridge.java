@@ -1,6 +1,6 @@
-import java.io.File;
-import java.io.FileWriter;
-import java.io.PrintWriter;
+import Frames.Dataframe;
+
+import java.io.*;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -8,7 +8,6 @@ import java.nio.channels.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.io.IOException;
 import java.util.*;
 
 public class Bridge {
@@ -55,19 +54,6 @@ public class Bridge {
                 channelsToDisconnect.add(client);
             }
         }
-
-        /*channelsToDisconnect.forEach(disconnectedChannel -> {
-            int port = connectedClients.get(disconnectedChannel);
-            connections.remove(Integer.valueOf(port));
-            connectedClients.remove(disconnectedChannel);
-            try {
-                disconnectedChannel.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            connection--;
-            System.out.println("Client disconnected from port " + port);
-        });*/
     }
 
 
@@ -206,7 +192,7 @@ public class Bridge {
                     if (key.isAcceptable()) {
                         clientAccept(key, selector);
                     }
-                    if(key.isReadable()){
+                    if (key.isReadable()) {
                         SocketChannel channel = (SocketChannel) key.channel();
                         ByteBuffer buffer = ByteBuffer.allocate(1024);
                         try {
@@ -223,17 +209,35 @@ public class Bridge {
                                 //clientDisconnect(key);
                             }
                             buffer.flip();
-                            byte[] data = new byte[buffer.remaining()];
-                            buffer.get(data);
-                            String response = new String(data);
-                            System.out.println("Received: " + response);
-                            //key.interestOps(SelectionKey.OP_WRITE);
+
+                            // Deserialize the received object
+                            try (ObjectInputStream objectInputStream = new ObjectInputStream(new ByteArrayInputStream(buffer.array()))) {
+                                Dataframe receivedData = (Dataframe) objectInputStream.readObject();
+
+                                // Now, you can work with the receivedData object as if it were a Dataframe.
+                                String receivedMessage = receivedData.getData();
+                                String sourceMacAddress = receivedData.getSourceMacAddress();
+                                String destinationMacAddress = receivedData.getDestinationMacAddress();
+
+                                // Process the received data as needed
+                                        /*byte[] data = new byte[buffer.remaining()];
+                                        buffer.get(data);
+                                        String response = new String(data);*/
+                                System.out.println("Received: " + receivedMessage);
+                                //key.interestOps(SelectionKey.OP_WRITE);
+                            }
+
+                            buffer.clear();
                         }
                         catch (IOException e) {
                             // Handle the connection error gracefully
                             key.cancel();
                             channel.close();
                             System.out.println("Connection error: " + e.getMessage());
+                        }
+                        catch (ClassNotFoundException e) {
+                            // Handle any exceptions here
+                            e.printStackTrace();
                         }
 
                     }
