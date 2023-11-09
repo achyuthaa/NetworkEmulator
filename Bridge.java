@@ -17,6 +17,7 @@ public class Bridge {
 
     static ArrayList<Integer> connections = new ArrayList<>();
     static HashMap<String,String> station = new HashMap<>();
+    static HashMap<String,Integer> SelfLearningtable = new HashMap<>();
     static int numPorts = 0;
     static int connection = 0;
     private static void createSymbolicLink(String target, String link) {
@@ -86,6 +87,7 @@ public class Bridge {
             connection++;
             InetSocketAddress add = (InetSocketAddress) client.getRemoteAddress();
             String clientIP = add.getAddress().getHostAddress();
+
             int port = add.getPort();
             connections.add(port);
             client.configureBlocking(false);
@@ -116,6 +118,14 @@ public class Bridge {
         }
         connection--;
         System.out.println("Client disconnected from port " + port);
+    }
+    
+    private static void Sltable(){
+        for(Map.Entry<String,Integer> entry : SelfLearningtable.entrySet()){
+            String key = entry.getKey();
+            Integer value = entry.getValue();
+            System.out.println("Key:"+ key + ", Value: " + value);
+        }
     }
 
     public static void main(String[] args) throws IOException {
@@ -165,8 +175,15 @@ public class Bridge {
             while (true) {
                 if (sc.hasNextLine()) {
                     String userInput = sc.nextLine();
+                    if (userInput.equals("show sltable")) {
+                        Sltable();
+                    }
+                    }
+                else if(sc.hasNextLine()) {
+                    String userInput = sc.nextLine();
                     broadcastMessage(userInput);
                 }
+
             }
         });
 
@@ -195,11 +212,12 @@ public class Bridge {
                     if (key.isReadable()) {
                         SocketChannel channel = (SocketChannel) key.channel();
                         ByteBuffer buffer = ByteBuffer.allocate(1024);
+                        int prt = ((InetSocketAddress) channel.getRemoteAddress()).getPort();
                         try {
                             int bytesRead = channel.read(buffer);
                             if (bytesRead == -1) {
                                 SocketChannel client = (SocketChannel) key.channel();
-                                int prt = ((InetSocketAddress) client.getRemoteAddress()).getPort();
+                                prt = ((InetSocketAddress) client.getRemoteAddress()).getPort();
                                 connections.remove(Integer.valueOf(prt));
                                 connectedClients.remove(prt);
                                 key.cancel();
@@ -216,14 +234,15 @@ public class Bridge {
 
                                 // Now, you can work with the receivedData object as if it were a Dataframe.
                                 String receivedMessage = receivedData.getData();
-                                String sourceMacAddress = receivedData.getSourceMacAddress();
-                                String destinationMacAddress = receivedData.getDestinationMacAddress();
+                                String sourceMacAddress = receivedData.getSourceIpaddress();
+                                String destinationMacAddress = receivedData.getDestinationIpaddress();
+                                SelfLearningtable.put(sourceMacAddress,prt);
 
                                 // Process the received data as needed
                                         /*byte[] data = new byte[buffer.remaining()];
                                         buffer.get(data);
                                         String response = new String(data);*/
-                                System.out.println("Received: " + receivedMessage);
+                                System.out.println("Received: " + receivedMessage +"src mac "+sourceMacAddress+" DestMAc"+destinationMacAddress);
                                 //key.interestOps(SelectionKey.OP_WRITE);
                             }
 

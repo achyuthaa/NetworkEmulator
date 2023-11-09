@@ -4,37 +4,37 @@ import java.io.Serializable;
 
 public class Dataframe implements Serializable {
     private String Data;
-    private String SourceMacAddress;
-    private String DestinationMacAddress;
+    private String SourceIpaddress;
+    private String DestinationIpaddress;
      private Dataframe(Builder builder){
         this.Data = builder.Data;
-        this.SourceMacAddress = builder.SourceMacAddress;
-        this.DestinationMacAddress = builder.DestinationMacAddress;
+        this.SourceIpaddress = builder.SourceIpaddress;
+        this.DestinationIpaddress = builder.DestinationIpaddress;
     }
     public String getData(){
         return Data;
     }
 
-    public String getDestinationMacAddress() {
-        return DestinationMacAddress;
+    public String getDestinationIpaddress() {
+        return DestinationIpaddress;
     }
-    public String getSourceMacAddress(){
-        return SourceMacAddress;
+    public String getSourceIpaddress(){
+        return SourceIpaddress;
     }
     public static class Builder{
          private String Data;
-         private String SourceMacAddress;
-         private String DestinationMacAddress;
+         private String SourceIpaddress;
+         private String DestinationIpaddress;
 
          public Builder(String Data){
              this.Data = Data;
          }
-         public Builder SourceMacAddress(String SourceMacAddress){
-             this.SourceMacAddress = SourceMacAddress;
+         public Builder SourceIpaddress(String SourceIpaddress){
+             this.SourceIpaddress= SourceIpaddress;
              return this;
          }
-         public Builder DestinationMacAddress(String DestinationMacAddress){
-             this.DestinationMacAddress = DestinationMacAddress;
+         public Builder DestinationIpaddress(String DestinationIpaddress){
+             this.DestinationIpaddress = DestinationIpaddress;
              return this;
          }
 
