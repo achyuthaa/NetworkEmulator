@@ -2,28 +2,20 @@ package Frames;
 
 import java.io.Serializable;
 
-public class ARPframe implements Serializable {
-    private String SourceIp;
-    private String DestinationIp;
+public class ARPframe extends Ipframe implements Serializable {
+   // private String SourceIp;
+    // private String DestinationIp;
 
     private String Sourcemac;
     private String Destinationmac;
-    private int Arptype;
+    private String Arptype;
 
-    public int getArptype() {
+    public String getArptype() {
         return Arptype;
-    }
-
-    public String getDestinationIp() {
-        return DestinationIp;
     }
 
     public String getDestinationmac() {
         return Destinationmac;
-    }
-
-    public String getSourceIp() {
-        return SourceIp;
     }
 
     public String getSourcemac() {
@@ -31,32 +23,20 @@ public class ARPframe implements Serializable {
     }
 
 
-    public ARPframe(Builder builder){
+    public ARPframe(Builder builder) {
+        super(builder); // Call the constructor of the superclass (Ipframe)
         Sourcemac = builder.Sourcemac;
         Destinationmac = builder.Destinationmac;
-        SourceIp = builder.SourceIp;
-        DestinationIp = builder.DestinationIp;
         Arptype = builder.Arptype;
     }
 
 
-    public static class Builder{
-        private String SourceIp;
-        private String DestinationIp;
-
+    public static class Builder extends Ipframe.Builder{
         private String Sourcemac;
         private String Destinationmac;
 
-        private int Arptype;
+        private String Arptype;
 
-        public Builder SourceIp(String SourceIp){
-            this.Sourcemac = SourceIp;
-            return this;
-        }
-        public Builder DestinationIp(String DestinationIp){
-            this.DestinationIp = DestinationIp;
-            return this;
-        }
         public Builder Sourcemac(String Sourcemac){
             this.Sourcemac = Sourcemac;
             return this;
@@ -67,9 +47,8 @@ public class ARPframe implements Serializable {
             return this;
         }
 
-        public Builder Arptype(int Arptype) {
+        public Builder (String Arptype) {
             this.Arptype = Arptype;
-            return this;
         }
 
         public ARPframe build(){

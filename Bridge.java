@@ -1,4 +1,7 @@
+import Frames.ARPframe;
 import Frames.Dataframe;
+import Frames.Ethernetframe;
+import Frames.Ipframe;
 
 import java.io.*;
 import java.net.InetAddress;
@@ -17,7 +20,7 @@ public class Bridge {
 
     static ArrayList<Integer> connections = new ArrayList<>();
     static HashMap<String,String> station = new HashMap<>();
-    static HashMap<String,Integer> SelfLearningtable = new HashMap<>();
+    static HashMap<String,SocketChannel> SelfLearningtable = new HashMap<>();
     static int numPorts = 0;
     static int connection = 0;
     private static void createSymbolicLink(String target, String link) {
@@ -34,19 +37,70 @@ public class Bridge {
             e.printStackTrace();
         }
     }
-    private static void broadcastMessage(String message) {
+    private static void broadcastMessage(Ethernetframe frame) throws IOException {
         for (Integer client : connections){
             System.out.println(client);
         }
 
-        ByteBuffer messageBuffer = ByteBuffer.wrap(message.getBytes());
+        ByteBuffer buffer = ByteBuffer.allocate(10000);
+
+
+
+        /*byte[] bytes = byteStream.toByteArray();
+        buffer.put(bytes);
+        buffer.flip();
+        socketChannel.write(buffer);*/
 
         List<SocketChannel> channelsToDisconnect = new ArrayList<>();
 
         for (SocketChannel client : connectedClients.keySet()) {
             try {
                 if (client.isOpen()) {
-                    client.write(messageBuffer.duplicate());
+                    ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+                    ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteStream);
+                    objectOutputStream.writeObject(frame);
+//                    objectOutputStream.flush();
+
+                    byte[] bytes = byteStream.toByteArray();
+                    ByteBuffer byteBuffer = ByteBuffer.wrap(bytes);
+//                    buffer.flip();
+                    client.write(byteBuffer);
+                } else {
+                    channelsToDisconnect.add(client);
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+                channelsToDisconnect.add(client);
+            }
+        }
+    }
+    private static void broadcastMessage(Dataframe frame) throws IOException {
+        for (Integer client : connections){
+            System.out.println(client);
+        }
+
+
+        ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+        ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteStream);
+
+        objectOutputStream.writeObject(frame);
+        objectOutputStream.flush();
+
+        byte[] bytes = byteStream.toByteArray();
+        /*byte[] bytes = byteStream.toByteArray();
+        buffer.put(bytes);
+        buffer.flip();
+        socketChannel.write(buffer);*/
+
+        List<SocketChannel> channelsToDisconnect = new ArrayList<>();
+
+        for (SocketChannel client : connectedClients.keySet()) {
+            try {
+                if (client.isOpen()) {
+                    ByteBuffer buffer = ByteBuffer.allocate(1024);
+                    buffer.put(bytes);
+                    buffer.flip();
+                    client.write(buffer);
                 } else {
                     channelsToDisconnect.add(client);
                 }
@@ -57,15 +111,21 @@ public class Bridge {
         }
     }
 
+    public static void Sendstation(Ethernetframe frame,SocketChannel sd){
+        try {
+            ByteBuffer buffer = ByteBuffer.allocate(1024);
+            ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+            ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteStream);
+            objectOutputStream.writeObject(frame);
+            objectOutputStream.flush();
 
-    private static void sendUserMessage(SocketChannel client) throws IOException {
-        // Get user input from the command line
-        if (sc.hasNextLine()) {
-            String userInput = sc.nextLine();
+            byte[] bytes = byteStream.toByteArray();
+            buffer.put(bytes);
+            buffer.flip();
 
-            // Send the user input as a message to the client
-            ByteBuffer messageBuffer = ByteBuffer.wrap(userInput.getBytes());
-            client.write(messageBuffer);
+            sd.write(buffer);
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
@@ -121,9 +181,9 @@ public class Bridge {
     }
     
     private static void Sltable(){
-        for(Map.Entry<String,Integer> entry : SelfLearningtable.entrySet()){
+        for(Map.Entry<String,SocketChannel> entry : SelfLearningtable.entrySet()){
             String key = entry.getKey();
-            Integer value = entry.getValue();
+            SocketChannel value = entry.getValue();
             System.out.println("Key:"+ key + ", Value: " + value);
         }
     }
@@ -179,10 +239,10 @@ public class Bridge {
                         Sltable();
                     }
                     }
-                else if(sc.hasNextLine()) {
-                    String userInput = sc.nextLine();
-                    broadcastMessage(userInput);
-                }
+//                else if(sc.hasNextLine()) {
+//                    String userInput = sc.nextLine();
+//                    broadcastMessage(userInput);
+//                }
 
             }
         });
@@ -230,20 +290,28 @@ public class Bridge {
 
                             // Deserialize the received object
                             try (ObjectInputStream objectInputStream = new ObjectInputStream(new ByteArrayInputStream(buffer.array()))) {
-                                Dataframe receivedData = (Dataframe) objectInputStream.readObject();
+                                Ethernetframe receivedData = (Ethernetframe) objectInputStream.readObject();
+                                Ipframe ipdata = (Ipframe) receivedData.getIframe();
+                                    String sourceMacAddress = receivedData.getSourceMacAddress();
+                                    String destinationMacAddress = receivedData.getDestinationMacAddress();
+                                    SelfLearningtable.put(sourceMacAddress, channel);
+                                        //It is arp request
+                                        // Now, you can work with the receivedData object as if it were a Dataframe.
+                                        //String receivedMessage = receivedData.getData();
+                                        if (SelfLearningtable.containsKey(destinationMacAddress)) {
+                                            SocketChannel sd = null;
+                                            for ( Map.Entry<String,SocketChannel> ent : SelfLearningtable.entrySet()) {
+                                                if(ent.getKey().equals(destinationMacAddress)){
+                                                    sd = ent.getValue();
+                                                }
+                                            }
+                                            Sendstation(receivedData,sd);
+                                        } else {
+                                            broadcastMessage(receivedData);
+                                        }
+                                    System.out.println("Received: " + " src mac " + sourceMacAddress + " DestMAc " + destinationMacAddress + "  " + receivedData.getIframe());
+                                    //key.interestOps(SelectionKey.OP_WRITE);
 
-                                // Now, you can work with the receivedData object as if it were a Dataframe.
-                                String receivedMessage = receivedData.getData();
-                                String sourceMacAddress = receivedData.getSourceIpaddress();
-                                String destinationMacAddress = receivedData.getDestinationIpaddress();
-                                SelfLearningtable.put(sourceMacAddress,prt);
-
-                                // Process the received data as needed
-                                        /*byte[] data = new byte[buffer.remaining()];
-                                        buffer.get(data);
-                                        String response = new String(data);*/
-                                System.out.println("Received: " + receivedMessage +"src mac "+sourceMacAddress+" DestMAc"+destinationMacAddress);
-                                //key.interestOps(SelectionKey.OP_WRITE);
                             }
 
                             buffer.clear();
