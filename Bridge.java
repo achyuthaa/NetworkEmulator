@@ -37,7 +37,7 @@ public class Bridge {
             e.printStackTrace();
         }
     }
-    private static void broadcastMessage(Ethernetframe frame) throws IOException {
+    private static void broadcastMessage(Ethernetframe frame,SocketChannel channel) throws IOException {
         for (Integer client : connections){
             System.out.println(client);
         }
@@ -307,7 +307,7 @@ public class Bridge {
                                             }
                                             Sendstation(receivedData,sd);
                                         } else {
-                                            broadcastMessage(receivedData);
+                                            broadcastMessage(receivedData,channel);
                                         }
                                     System.out.println("Received: " + " src mac " + sourceMacAddress + " DestMAc " + destinationMacAddress + "  " + receivedData.getIframe());
                                     //key.interestOps(SelectionKey.OP_WRITE);

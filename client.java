@@ -33,6 +33,10 @@ public class client {
 
     public static void Sendobject(Ethernetframe frame,SocketChannel sd){
         try {
+            if (frame.getIframe() == null) {
+                System.out.println("Error: Attempting to send a null frame.");
+                return;
+            }
             ByteBuffer buffer = ByteBuffer.allocate(1024);
             ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
             ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteStream);
@@ -286,27 +290,45 @@ public class client {
 
                         //Dataframe data = new Dataframe.Builder(message).SourceIpaddress(sourceip).DestinationIpaddress(Destinationip).Arptype(0).build();
                         Dataframe data = new Dataframe.Builder().Data(message).build();
-                        Ipframe pack = new Ipframe.Builder().SourceIpaddress(sourceip).destinationIP(Destinationip).build();
+                        Ipframe pack = new Ipframe.Builder().SourceIpaddress(sourceip).dframe(data).destinationIP(Destinationip).build();
                         String[] arr = iptable.get(srcinterface);
                         Sourcemac = arr[2];
                         String bri = arr[3];
 
                         if(nexthop.equals("0.0.0.0")){
                             Ipframe arppack = null;
+                            Ethernetframe Arpreq = null;
                             if(!Arpcache.containsKey(pack.getDestinationIp())){
                                 PacketQ Qpack = new PacketQ.Builder().iframe(pack).nextHop(Destinationip).build();
                                 packetqueue.add(Qpack);
                                 arppack = new ARPframe.Builder("1").Sourcemac(Sourcemac).SourceIpaddress(sourceip).destinationIP(Destinationip).build();
+                                Arpreq =  new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).ipframe(arppack).build();
                             }
                             else{
-                                for (PacketQ packetout: packetqueue) {
+                                String Dmac = null;
+                                //System.out.println("going here");
+                                /*for (PacketQ packetout: packetqueue) {
                                     if(packetout.getNextHop().equals(pack.getDestinationIp())){
-                                        Ipframe ippackretreived = packetout.getIframe();
-                                        Ethernetframe Arpreq =  new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).ipframe(ippackretreived).build();
+                                        PacketQ packetpop = packetqueue.poll();
+                                        arppack = packetout.getIframe();
+                                        String Dmac = null;
+                                        for ( Map.Entry<String,String> ent: Arpcache.entrySet()) {
+                                            if(ent.getKey().equals(arppack.getDestinationIp())){
+                                                Dmac = ent.getValue();
+                                            }
+                                        }
+
+                                    }
+                                }*/
+                                for ( Map.Entry<String,String> ent: Arpcache.entrySet()) {
+                                    if(ent.getKey().equals(pack.getDestinationIp())){
+                                        Dmac = ent.getValue();
                                     }
                                 }
+                                Arpreq =  new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).DestinationMacAddress(Dmac).ipframe(pack).build();
+                                System.out.println("original packet is sent");
                             }
-                            Ethernetframe Arpreq =  new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).ipframe(arppack).build();
+
                             try {
                                 ByteBuffer buffer = ByteBuffer.allocate(1024);
                                 ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
@@ -450,11 +472,8 @@ public class client {
                             String Arptype = "";
                             if(receivedObjec instanceof ARPframe) {
                                 ARPframe receivedarp = (ARPframe) receivedObjec;
-                                if (receivedarp.getArptype() == null) {
-                                    Arptype = "0";
-                                } else {
-                                    Arptype = receivedarp.getArptype();
-                                }
+                                Arptype = receivedarp.getArptype();
+
 
                                 String arpsrc = receivedData.getSourceMacAddress();
 
@@ -462,7 +481,7 @@ public class client {
                                 String arpdip = receivedarp.getDestinationIp();
 
                                 //Arpcache.put(arpsip,arpsrc);
-                                Ipframe backarp = null;
+
                                 if (Arptype.equals("1")) {
                                     System.out.println("Received Arprequest");
                                     String sourceMacAddress = receivedData.getSourceMacAddress();
@@ -481,22 +500,39 @@ public class client {
                                     System.out.println("reachedthis " + Sourcemac + " " + sourceip + " " + receivedarp.getDestinationIp());
                                     if (receivedarp.getDestinationIp().equals(sourceip)) {
                                         System.out.println("Sent Arpresponse");
-                                        backarp = new ARPframe.Builder("2").Sourcemac(arpsrc).Destinationmac(Sourcemac).destinationIP(arpsip).SourceIpaddress(arpdip).build();
+                                        Ipframe backarp = new ARPframe.Builder("2").Sourcemac(arpsrc).Destinationmac(Sourcemac).destinationIP(arpsip).SourceIpaddress(arpdip).build();
+                                        //String sourceMacAddress = Sourcemac;
+                                        //String destinationMacAddress = receivedData.getSourceMacAddress();
+                                        System.out.println(backarp);
+                                        Ethernetframe frame = new Ethernetframe.Builder().getType(8).SourceMacAddress(Sourcemac).DestinationMacAddress(receivedData.getSourceMacAddress()).ipframe(backarp).build();
+                                        Sendobject(frame, channel);
                                     }
 
                                 }
-                                String sourceMacAddress = Sourcemac;
-                                String destinationMacAddress = receivedData.getSourceMacAddress();
-                                Ethernetframe frame = new Ethernetframe.Builder().SourceMacAddress(sourceMacAddress).DestinationMacAddress(destinationMacAddress).ipframe(backarp).build();
-                                Sendobject(frame, channel);
+
 
                                 if (Arptype.equals("2")) {
                                     System.out.println("Received Arpresponse");
                                     String destinmac = receivedarp.getDestinationmac();
                                     String destip = receivedarp.getSourceIP();
                                     Arpcache.put(destip,destinmac);
+
+                                    for (PacketQ packet: packetqueue) {
+                                        //System.out.println(packet.getNextHop());
+                                        if(packet.getNextHop().equals(destip)){
+                                            PacketQ pack = packetqueue.poll();
+                                            Ipframe packtosend = packet.getIframe();
+                                            Ethernetframe finalframe =  new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).ipframe(packtosend).DestinationMacAddress(destinmac).build();
+                                            System.out.println("original packet is sent");
+                                            Sendobject(finalframe,channel);
+                                        }
+                                    }
                                 }
                             }
+                            else{
+                                System.out.println("Received message is"+" "+receivedObjec.getDframe().getData() );
+                            }
+
                             //System.out.println("Received Ethernetframe: src MAC " + sourceMacAddress + ", Dest MAC " + destinationMacAddress + " ArpType: " + receivedData.getType());
                         } else if (receivedObject instanceof String) {
                             String receivedString = (String) receivedObject;

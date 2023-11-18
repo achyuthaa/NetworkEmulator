@@ -1,6 +1,8 @@
 package Frames;
 
-public class PacketQ {
+import java.io.Serializable;
+
+public class PacketQ implements Serializable {
 
 
         private String nextHop;
