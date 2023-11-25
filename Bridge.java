@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -20,7 +21,7 @@ import java.util.concurrent.TimeUnit;
 public class Bridge {
 
     static Scanner sc = new Scanner(System.in);
-    static Map<SocketChannel,Integer> connectedClients = new HashMap<>();
+    static Map<SocketChannel,Integer> connectedClients = new ConcurrentHashMap<>();
 
     static ArrayList<Integer> connections = new ArrayList<>();
     static HashMap<String,String> station = new HashMap<>();
@@ -220,6 +221,34 @@ public class Bridge {
                     String userInput = sc.nextLine();
                     if (userInput.equals("show sltable")) {
                         Sltable();
+                    }
+                    else if (userInput.equals("quit")) {
+                        System.out.println("Removing all connections...");
+
+                        for (SocketChannel client : connectedClients.keySet()) {
+                            try {
+                                clientDisconnect(client);
+                                System.out.println("Disconnected client: " + client.getRemoteAddress());
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                                // Handle the exception appropriately, log it, and continue with other clients
+                            }
+                        }
+
+                        try {
+                            sd_sock.close();
+                            System.out.println("Server socket closed");
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                            // Handle the exception appropriately
+                        }
+
+                        System.out.println("Removed all connections. Exiting server.");
+                        System.exit(0);
+                    }
+
+                    else {
+                        System.out.println("Unrecognized command: " + userInput);
                     }
                     }
             }
