@@ -12,17 +12,27 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 public class client {
-    static Map<String, String[]> iptable = new HashMap<>();
-    static Map<String, String> Hosts = new HashMap<>();
-    static Map<String, String[]> rtable = new HashMap<>();
-    static Map<String, String> Arpcache = new HashMap<>();
-    static Map<String, SocketChannel> path = new HashMap<>();
-
+    private static final int MAX_CONNECTION_ATTEMPTS = 5;
+    private static boolean connectionEstablished = false;
+    private static final int CONNECTION_INTERVAL_SECONDS = 2;
+    static Map<String, String[]> iptable = new ConcurrentHashMap<>();
+    static Map<String, String> Hosts = new ConcurrentHashMap<>();
+    static Map<String, String[]> rtable = new ConcurrentHashMap<>();
+    static Map<String, String> Arpcache = new ConcurrentHashMap<>();
+    static Map<String, SocketChannel> path = new ConcurrentHashMap<>();
+    private static final Map<String, Long> ExpirationTimes = new HashMap<>();
+    private static final long EXPIRATION_TIME_MS = 30000; // 60 seconds
+    private static final Object lock = new Object();
+    private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     static Map<String, Integer> serverss = new HashMap<>();
     static String ResultIP = "";
     static String srcinterface = "";
@@ -31,7 +41,7 @@ public class client {
 
     static Queue<PacketQ> packetqueue = new LinkedList<>();
 
-    public static void Sendobject(Ethernetframe frame,SocketChannel sd){
+    public static void Sendobject(Ethernetframe frame,SocketChannel sd) throws IOException {
         try {
             if (frame.getIframe() == null) {
                 System.out.println("Error: Attempting to send a null frame.");
@@ -49,6 +59,7 @@ public class client {
 
             sd.write(buffer);
         } catch (IOException e) {
+            sd.close();
             e.printStackTrace();
         }
     }
@@ -235,22 +246,43 @@ public class client {
                         System.out.println("+-------------------+-------------------+-------------------+-------------------+");
 
                     }  else if (userInput.equals("show arpcache")) {
-                    System.out.println("+-------------------+-------------------+");
-                    System.out.println("|   IP Address     |     MAC Address   |");
-                    System.out.println("+-------------------+-------------------+");
+                        System.out.println("+-------------------+-------------------+-------------------+");
+                        System.out.println("|   IP Address     |     MAC Address   |    Time Left (s)   |");
+                        System.out.println("+-------------------+-------------------+-------------------+");
 
-                    for (Map.Entry<String, String> entry : Arpcache.entrySet()) {
-                        String ipAddress = entry.getKey();
-                        String macAddress = entry.getValue();
+                        for (Map.Entry<String, String> entry : Arpcache.entrySet()) {
+                            String ipAddress = entry.getKey();
+                            String macAddress = entry.getValue();
+                            /*for (Map.Entry<String,Long> ok: ExpirationTimes.entrySet()
+                                 ) {System.out.println("ip"+ok.getKey()+"mac"+ok.getValue());
 
-                        System.out.printf("| %-17s | %-17s |\n", ipAddress, macAddress);
+                            }*/
+
+                            long expirationTime = ExpirationTimes.getOrDefault(macAddress, 0L);
+                            long timeLeft = Math.max(0, TimeUnit.MILLISECONDS.toSeconds(expirationTime - System.currentTimeMillis()));
+
+                            System.out.printf("| %-17s | %-17s | %-17s |\n", ipAddress, macAddress, timeLeft);
+                        }
+
+                        System.out.println("+-------------------+-------------------+-------------------+");
+                    }
+                    else if (userInput.equals("showPacketQueue")) {
+                        System.out.println("+------------------+");
+                        System.out.println("| Packets in Queue |");
+                        System.out.println("+------------------+");
+
+                        int packetCount = packetqueue.size();
+
+                        System.out.printf("| %-16d |\n", packetCount);
+
+                        System.out.println("+------------------+");
+                        for (PacketQ Q: packetqueue
+                        ) {
+                            System.out.println(Q.getIframe().getDframe().getData());
+                        }
                     }
 
-                    System.out.println("+-------------------+-------------------+");
-                }
-
-                else if (parts.length >= 3 && "send".equals(parts[0])) {
-                        //String[] parts = userInput.split(" ");
+                    else if (parts.length >= 3 && "send".equals(parts[0])) {
                         String recipient = parts[1];
                         String message = String.join(" ", Arrays.copyOfRange(parts, 2, parts.length));
                         String Destinationip = Hosts.get(recipient);
@@ -287,136 +319,58 @@ public class client {
                         }
                         System.out.println("nexthopcheck"+ " "+nexthop);
 
-
-                        //Dataframe data = new Dataframe.Builder(message).SourceIpaddress(sourceip).DestinationIpaddress(Destinationip).Arptype(0).build();
                         Dataframe data = new Dataframe.Builder().Data(message).build();
                         Ipframe pack = new Ipframe.Builder().SourceIpaddress(sourceip).dframe(data).destinationIP(Destinationip).build();
                         String[] arr = iptable.get(srcinterface);
                         Sourcemac = arr[2];
                         String bri = arr[3];
-
+                        String nexthopip = null;
                         if(nexthop.equals("0.0.0.0")){
-                            Ipframe arppack = null;
-                            Ethernetframe Arpreq = null;
-                            if(!Arpcache.containsKey(pack.getDestinationIp())){
-                                PacketQ Qpack = new PacketQ.Builder().iframe(pack).nextHop(Destinationip).build();
-                                packetqueue.add(Qpack);
-                                arppack = new ARPframe.Builder("1").Sourcemac(Sourcemac).SourceIpaddress(sourceip).destinationIP(Destinationip).build();
-                                Arpreq =  new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).ipframe(arppack).build();
-                            }
-                            else{
-                                String Dmac = null;
-                                //System.out.println("going here");
-                                /*for (PacketQ packetout: packetqueue) {
-                                    if(packetout.getNextHop().equals(pack.getDestinationIp())){
-                                        PacketQ packetpop = packetqueue.poll();
-                                        arppack = packetout.getIframe();
-                                        String Dmac = null;
-                                        for ( Map.Entry<String,String> ent: Arpcache.entrySet()) {
-                                            if(ent.getKey().equals(arppack.getDestinationIp())){
-                                                Dmac = ent.getValue();
-                                            }
-                                        }
-
-                                    }
-                                }*/
-                                for ( Map.Entry<String,String> ent: Arpcache.entrySet()) {
-                                    if(ent.getKey().equals(pack.getDestinationIp())){
-                                        Dmac = ent.getValue();
-                                    }
-                                }
-                                Arpreq =  new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).DestinationMacAddress(Dmac).ipframe(pack).build();
-                                System.out.println("original packet is sent");
-                            }
-
+                            nexthopip = Destinationip;
+                        }
+                        else {
+                            nexthopip = nexthop;
+                        }
+                        PacketQ Qpack = new PacketQ.Builder().iframe(pack).nextHop(nexthopip).build();
+                        packetqueue.add(Qpack);
+                        Ipframe arppack = null;
+                        Ethernetframe Arpreq = null;
+                        SocketChannel sd = path.get(bri);
+                        if(!Arpcache.containsKey(nexthopip)){
+                            arppack = new ARPframe.Builder("1").Sourcemac(Sourcemac).SourceIpaddress(sourceip).destinationIP(nexthopip).build();
+                            Arpreq =  new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).ipframe(arppack).build();
                             try {
-                                ByteBuffer buffer = ByteBuffer.allocate(1024);
-                                ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
-                                ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteStream);
-                                objectOutputStream.writeObject(Arpreq);
-                                objectOutputStream.flush();
-
-                                byte[] bytes = byteStream.toByteArray();
-                                buffer.put(bytes);
-                                buffer.flip();
-                                SocketChannel sd = path.get(bri);
-                                for (Map.Entry<String, SocketChannel> entry : path.entrySet()) {
-                                    String a = entry.getKey();
-                                    SocketChannel b = entry.getValue();
-                                    System.out.println(a + " " + b);
-                                }
-
-                                sd.write(buffer);
+                                Sendobject(Arpreq,sd);
                             } catch (IOException e) {
-                                e.printStackTrace();
+                                System.out.println("connection closed");
                             }
                         }
-
-                       else{
-                           if (!Arpcache.containsKey(nexthop)) {
-                                PacketQ Qpack = new PacketQ.Builder().iframe(pack).nextHop(nexthop).build();
-                                packetqueue.add(Qpack);
-                                //ARPframe pack = new ARPframe.Builder().Arptype(1).DestinationIp(nexthop).Sourcemac(Sourcemac).SourceIp(sourceip).build();
-                                //Ipframe arpack = new Ipframe.Builder().SourceIpaddress(sourceip).destinationIP(nexthop).build();
-                                Ipframe arppack = null;
-                                arppack = new ARPframe.Builder("1").Sourcemac(Sourcemac).SourceIpaddress(sourceip).destinationIP(nexthop).build();
-
-                                Ethernetframe Arpreq =  new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).ipframe(arppack).build();
-                                try {
-                                    ByteBuffer buffer = ByteBuffer.allocate(1024);
-                                    ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
-                                    ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteStream);
-                                    objectOutputStream.writeObject(Arpreq);
-                                    objectOutputStream.flush();
-
-                                    byte[] bytes = byteStream.toByteArray();
-                                    buffer.put(bytes);
-                                    buffer.flip();
-                                    SocketChannel sd = path.get(bri);
-                                    for (Map.Entry<String, SocketChannel> entry : path.entrySet()) {
-                                        String a = entry.getKey();
-                                        SocketChannel b = entry.getValue();
-                                        System.out.println(a + " " + b);
+                        else{
+                            String Dmac = null;
+                            System.out.println("going here");
+                            for (PacketQ packetout: packetqueue) {
+                                System.out.println(nexthopip+" "+packetout.getNextHop());
+                                if(packetout.getNextHop().equals(nexthopip)){
+                                    for ( Map.Entry<String,String> ent: Arpcache.entrySet()) {
+                                        if(ent.getKey().equals(packetout.getNextHop())){
+                                            Dmac = ent.getValue();
+                                            PacketQ packetpop = packetqueue.poll();
+                                            arppack = packetout.getIframe();
+                                            Arpreq =  new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).DestinationMacAddress(Dmac).ipframe(arppack).build();
+                                            System.out.println("original packet is sent "+pack.getDframe().getData());
+                                            System.out.println("Q sent");
+                                            try {
+                                                Sendobject(Arpreq,sd);
+                                            } catch (IOException e) {
+                                                System.out.println("connection closed");
+                                            }
+                                        }
                                     }
 
-                                    sd.write(buffer);
-                                } catch (IOException e) {
-                                    e.printStackTrace();
                                 }
-
-                            } else if (Arpcache.containsKey(nexthop)) {
-                                String destmac = Arpcache.get(nexthop);
-                                PacketQ packtosend = null;
-                                for (PacketQ Qpack : packetqueue
-                                ) {
-                                    if (Qpack.getNextHop().equals(nexthop)) {
-                                        packtosend = packetqueue.poll();
-                                        break;
-                                    }
-                                }
-                                Ipframe packet = packtosend.getIframe();
-                                Ethernetframe packready = new Ethernetframe.Builder().getType(0).DestinationMacAddress(destmac).SourceMacAddress(Sourcemac).ipframe(packet).build();
-                                try {
-                                    ByteBuffer buffer = ByteBuffer.allocate(1024);
-                                    ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
-                                    ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteStream);
-                                    objectOutputStream.writeObject(packready);
-                                    objectOutputStream.flush();
-
-                                    byte[] bytes = byteStream.toByteArray();
-                                    buffer.put(bytes);
-                                    buffer.flip();
-                                    SocketChannel sd = path.get(bri);
-                                    for (Map.Entry<String, SocketChannel> entry : path.entrySet()) {
-                                        String a = entry.getKey();
-                                        SocketChannel b = entry.getValue();
-                                        System.out.println(a + " " + b);
-                                    }
-
-                                    sd.write(buffer);
-                                } catch (IOException e) {
-                                    e.printStackTrace();
-                                }
+                            }
+                            synchronized (lock) {
+                                ExpirationTimes.put(Dmac, System.currentTimeMillis() + EXPIRATION_TIME_MS);
                             }
 
                         }
@@ -426,11 +380,11 @@ public class client {
 
         });
 
-
         // Start the user input thread
         userInputThread.start();
-
-        while (true) {
+        int connectionAttempts = 0;
+        ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
+        while (connectionAttempts < MAX_CONNECTION_ATTEMPTS && !connectionEstablished) {
             selector.select();
             Set<SelectionKey> selectedKeys = selector.selectedKeys();
             Iterator<SelectionKey> keyIterator = selectedKeys.iterator();
@@ -496,13 +450,44 @@ public class client {
 
 
                                     }
-                                    Arpcache.put(arpsip,arpsrc);
+                                    synchronized (lock) {
+                                        Arpcache.put(arpsip,arpsrc);
+                                    }
+                                    long expirationTime = System.currentTimeMillis() + EXPIRATION_TIME_MS;
+                                    synchronized (lock) {
+                                        ExpirationTimes.put(arpsrc, expirationTime);
+                                    }
+
+                                    scheduler.scheduleAtFixedRate(() -> {
+                                        synchronized (lock) {
+                                            Iterator<Map.Entry<String, Long>> iterator = ExpirationTimes.entrySet().iterator();
+                                            while (iterator.hasNext()) {
+                                                Map.Entry<String, Long> entry = iterator.next();
+                                                String sourceip = entry.getKey();
+                                                long expirationTim = entry.getValue();
+
+                                                long currentTime = System.currentTimeMillis();
+                                                long timeLeft = expirationTim - currentTime;
+
+                                                if (timeLeft <= 0) {
+                                                    String ip = null;
+                                                    for (Map.Entry<String,String> ok: Arpcache.entrySet()
+                                                    ) {
+                                                        if(ok.getValue().equals(sourceip)){
+                                                            ip = ok.getKey();
+                                                        }
+                                                    }
+                                                    Arpcache.remove(ip);
+                                                    iterator.remove(); // Remove the entry using iterator to avoid ConcurrentModificationException
+                                                    System.out.println("Arpcache entry expired: " + sourceip);
+                                                }
+                                            }
+                                        }
+                                    }, 0, 1000,TimeUnit.MILLISECONDS);
                                     System.out.println("reachedthis " + Sourcemac + " " + sourceip + " " + receivedarp.getDestinationIp());
                                     if (receivedarp.getDestinationIp().equals(sourceip)) {
                                         System.out.println("Sent Arpresponse");
                                         Ipframe backarp = new ARPframe.Builder("2").Sourcemac(arpsrc).Destinationmac(Sourcemac).destinationIP(arpsip).SourceIpaddress(arpdip).build();
-                                        //String sourceMacAddress = Sourcemac;
-                                        //String destinationMacAddress = receivedData.getSourceMacAddress();
                                         System.out.println(backarp);
                                         Ethernetframe frame = new Ethernetframe.Builder().getType(8).SourceMacAddress(Sourcemac).DestinationMacAddress(receivedData.getSourceMacAddress()).ipframe(backarp).build();
                                         Sendobject(frame, channel);
@@ -515,24 +500,165 @@ public class client {
                                     System.out.println("Received Arpresponse");
                                     String destinmac = receivedarp.getDestinationmac();
                                     String destip = receivedarp.getSourceIP();
-                                    Arpcache.put(destip,destinmac);
+                                    synchronized (lock) {
+                                        Arpcache.put(arpsip,arpsrc);
+                                    }
+                                    long expirationTime = System.currentTimeMillis() + EXPIRATION_TIME_MS;
+                                    ExpirationTimes.put(arpsrc, expirationTime);
 
-                                    for (PacketQ packet: packetqueue) {
-                                        //System.out.println(packet.getNextHop());
-                                        if(packet.getNextHop().equals(destip)){
-                                            PacketQ pack = packetqueue.poll();
+                                    scheduler.scheduleAtFixedRate(() -> {
+                                        synchronized (lock) {
+                                            Iterator<Map.Entry<String, Long>> iterator = ExpirationTimes.entrySet().iterator();
+                                            while (iterator.hasNext()) {
+                                                Map.Entry<String, Long> entry = iterator.next();
+                                                String sourceip = entry.getKey();
+                                                long expirationTim = entry.getValue();
+
+                                                long currentTime = System.currentTimeMillis();
+                                                long timeLeft = expirationTim - currentTime;
+
+                                                if (timeLeft <= 0) {
+                                                    String ip = null;
+                                                    iterator.remove(); // Remove the entry using iterator to avoid ConcurrentModificationException
+                                                    for (Map.Entry<String,String> ok: Arpcache.entrySet()
+                                                    ) {
+                                                        if(ok.getValue().equals(sourceip)){
+                                                            ip = ok.getKey();
+                                                        }
+                                                    }
+                                                    Arpcache.remove(ip);
+                                                    System.out.println("Arpcache entry expired: " + sourceip);
+                                                }
+                                            }
+                                        }
+                                    }, 0, 1000,TimeUnit.MILLISECONDS);
+                                    Iterator<PacketQ> iterator = packetqueue.iterator();
+                                    while (iterator.hasNext()) {
+                                        PacketQ packet = iterator.next();
+                                        System.out.println(packet.getNextHop()+" "+destip);
+                                        if (packet.getNextHop().equals(destip)) {
                                             Ipframe packtosend = packet.getIframe();
-                                            Ethernetframe finalframe =  new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).ipframe(packtosend).DestinationMacAddress(destinmac).build();
+                                            Ethernetframe finalframe = new Ethernetframe.Builder()
+                                                    .getType(1)
+                                                    .SourceMacAddress(Sourcemac)
+                                                    .ipframe(packtosend)
+                                                    .DestinationMacAddress(destinmac)
+                                                    .build();
                                             System.out.println("original packet is sent");
-                                            Sendobject(finalframe,channel);
+                                            Sendobject(finalframe, channel);
+                                            iterator.remove(); // Safely remove the current element from the collection
+                                        }
+                                    }
+
+                                }
+                            }
+                            else if(receivedObjec.getDestinationIp().equals(sourceip)){
+                                long expirationTime = System.currentTimeMillis() + EXPIRATION_TIME_MS;
+                                ExpirationTimes.put(((Ethernetframe) receivedObject).getSourceMacAddress(), expirationTime);
+
+                                System.out.println("Received message is"+" "+receivedObjec.getDframe().getData() );
+                            }
+                            else{
+                                String nexthop = null;
+                                String tnexthop = null;
+                                Sourcemac = null;
+                                String Destinationmac = null;
+                                for (Map.Entry<String, String[]> entry : rtable.entrySet()) {
+                                    tnexthop = entry.getKey();
+                                    String values[] = entry.getValue();
+                                    String subnetmask = values[1];
+                                    System.out.println(subnetmask);
+
+                                    String[] octets1 = receivedObjec.getDestinationIp().split("\\.");
+                                    String[] octets2 = subnetmask.split("\\.");
+                                    int resultOctets[] = new int[4];
+                                    for (int i = 0; i < 4; i++) {
+                                        int octet1 = Integer.parseInt(octets1[i]);
+                                        int octet2 = Integer.parseInt(octets2[i]);
+                                        resultOctets[i] = octet1 & octet2;
+                                        ResultIP = String.format("%d.%d.%d.%d", resultOctets[0], resultOctets[1], resultOctets[2], resultOctets[3]);
+
+                                        if (ResultIP.equals(tnexthop)) {
+                                            sourceip = Hosts.get(values[2]);
+                                            srcinterface = values[2];
+                                            nexthop = values[0];
+                                            //System.out.println(ResultIP);
+                                            //System.out.println(sourceip);
+                                            break;
                                         }
                                     }
                                 }
-                            }
-                            else{
-                                System.out.println("Received message is"+" "+receivedObjec.getDframe().getData() );
-                            }
+                                System.out.println("nexthopcheck"+ " "+nexthop);
 
+                                String[] arr = iptable.get(srcinterface);
+                                Sourcemac = arr[2];
+                                String bri = arr[3];
+                                String nexthopip = null;
+                                if(nexthop.equals("0.0.0.0")) {
+                                    nexthopip = receivedObjec.getDestinationIp();
+                                }
+                                else {
+                                    nexthopip = nexthop;
+                                }
+                                Ipframe arppack = null;
+                                Ethernetframe Arpreq = null;
+                                SocketChannel sd = path.get(bri);
+                                if (!Arpcache.containsKey(receivedObjec.getDestinationIp())) {
+                                    PacketQ Qpack = new PacketQ.Builder().iframe(receivedObjec).nextHop(nexthopip).build();
+                                    packetqueue.add(Qpack);
+                                    arppack = new ARPframe.Builder("1").Sourcemac(Sourcemac).SourceIpaddress(sourceip).destinationIP(nexthopip).build();
+                                    Arpreq = new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).ipframe(arppack).build();
+                                } else {
+                                    synchronized (lock) {
+                                        ExpirationTimes.put(((Ethernetframe) receivedObject).getSourceMacAddress(), System.currentTimeMillis() + EXPIRATION_TIME_MS);
+                                    }
+                                    String Dmac = null;
+                                    PacketQ packtosend = null;
+                                    //SocketChannel sd = path.get(bri);
+                                  /*  //Arpreq =  new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).DestinationMacAddress(Dmac).ipframe(receivedObjec).build();
+                                    System.out.println("original packet is sent");
+                                    SocketChannel sd = path.get(bri);
+                                    for (PacketQ Qpac : packetqueue
+                                    ) {
+                                        if (Qpac.getNextHop().equals(nexthopip)) {
+                                            packtosend = packetqueue.poll();
+                                            for (Map.Entry<String, String> ent : Arpcache.entrySet()) {
+                                                if (ent.getKey().equals(receivedObjec.getDestinationIp())) {
+                                                    Dmac = ent.getValue();
+                                                }
+                                            }
+                                            Ipframe packet = packtosend.getIframe();
+                                            Ethernetframe packready = new Ethernetframe.Builder().getType(0).DestinationMacAddress(Dmac).SourceMacAddress(Sourcemac).ipframe(packet).build();
+                                            //SocketChannel sd = path.get(bri);
+                                            Sendobject(packready, sd);
+                                        }
+                                    }
+                                    //System.out.println("going here");
+                                /*for (PacketQ packetout: packetqueue) {
+                                    if(packetout.getNextHop().equals(pack.getDestinationIp())){
+                                        PacketQ packetpop = packetqueue.poll();
+                                        arppack = packetout.getIframe();
+                                        String Dmac = null;
+                                        for ( Map.Entry<String,String> ent: Arpcache.entrySet()) {
+                                            if(ent.getKey().equals(arppack.getDestinationIp())){
+                                                Dmac = ent.getValue();
+                                            }
+                                        }
+
+                                    }
+                                }*/
+                                    for (Map.Entry<String, String> ent : Arpcache.entrySet()) {
+                                        if (ent.getKey().equals(receivedObjec.getDestinationIp())) {
+                                            Dmac = ent.getValue();
+                                        }
+                                    }
+                                    Arpreq = new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).DestinationMacAddress(Dmac).ipframe(receivedObjec).build();
+                                    System.out.println("original packet is sent");
+                                }
+                                Sendobject(Arpreq,sd);
+
+
+                            }
                             //System.out.println("Received Ethernetframe: src MAC " + sourceMacAddress + ", Dest MAC " + destinationMacAddress + " ArpType: " + receivedData.getType());
                         } else if (receivedObject instanceof String) {
                             String receivedString = (String) receivedObject;
@@ -555,8 +681,6 @@ public class client {
             }
         }
     }
-
-
 
     private static String readSymbolicLink(String linkName) throws IOException {
         File symbolicLinkFile = new File(linkName);

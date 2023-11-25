@@ -6,12 +6,16 @@ import Frames.Ipframe;
 import java.io.*;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class Bridge {
 
@@ -20,52 +24,35 @@ public class Bridge {
 
     static ArrayList<Integer> connections = new ArrayList<>();
     static HashMap<String,String> station = new HashMap<>();
+    private static final Map<String, Long> ExpirationTimes = new HashMap<>();
+    private static final long EXPIRATION_TIME_MS = 30000; // 60 seconds
     static HashMap<String,SocketChannel> SelfLearningtable = new HashMap<>();
+    private static final Object lock = new Object();
+    private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+
     static int numPorts = 0;
     static int connection = 0;
-    private static void createSymbolicLink(String target, String link) {
-        Path targetPath = Paths.get(target);
-        Path linkPath = Paths.get(link);
-
-        try {
-            if (Files.isSymbolicLink(linkPath)) {
-
-                Files.delete(linkPath);
-            }
-            Files.createSymbolicLink(linkPath, targetPath);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-    private static void broadcastMessage(Ethernetframe frame,SocketChannel channel) throws IOException {
-        for (Integer client : connections){
+    private static void broadcastMessage(Ethernetframe frame, SocketChannel senderChannel) throws IOException {
+        for (Integer client : connections) {
             System.out.println(client);
         }
 
         ByteBuffer buffer = ByteBuffer.allocate(10000);
 
-
-
-        /*byte[] bytes = byteStream.toByteArray();
-        buffer.put(bytes);
-        buffer.flip();
-        socketChannel.write(buffer);*/
-
         List<SocketChannel> channelsToDisconnect = new ArrayList<>();
 
         for (SocketChannel client : connectedClients.keySet()) {
             try {
-                if (client.isOpen()) {
+                if (client.isOpen() && !client.equals(senderChannel)) {
                     ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
                     ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteStream);
                     objectOutputStream.writeObject(frame);
-//                    objectOutputStream.flush();
 
                     byte[] bytes = byteStream.toByteArray();
                     ByteBuffer byteBuffer = ByteBuffer.wrap(bytes);
-//                    buffer.flip();
+
                     client.write(byteBuffer);
-                } else {
+                } else if (!client.isOpen()) {
                     channelsToDisconnect.add(client);
                 }
             } catch (IOException e) {
@@ -73,41 +60,10 @@ public class Bridge {
                 channelsToDisconnect.add(client);
             }
         }
-    }
-    private static void broadcastMessage(Dataframe frame) throws IOException {
-        for (Integer client : connections){
-            System.out.println(client);
-        }
 
-
-        ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
-        ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteStream);
-
-        objectOutputStream.writeObject(frame);
-        objectOutputStream.flush();
-
-        byte[] bytes = byteStream.toByteArray();
-        /*byte[] bytes = byteStream.toByteArray();
-        buffer.put(bytes);
-        buffer.flip();
-        socketChannel.write(buffer);*/
-
-        List<SocketChannel> channelsToDisconnect = new ArrayList<>();
-
-        for (SocketChannel client : connectedClients.keySet()) {
-            try {
-                if (client.isOpen()) {
-                    ByteBuffer buffer = ByteBuffer.allocate(1024);
-                    buffer.put(bytes);
-                    buffer.flip();
-                    client.write(buffer);
-                } else {
-                    channelsToDisconnect.add(client);
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
-                channelsToDisconnect.add(client);
-            }
+        // Handle disconnection after the loop to avoid ConcurrentModificationException
+        for (SocketChannel disconnectedClient : channelsToDisconnect) {
+            connectedClients.remove(disconnectedClient);
         }
     }
 
@@ -166,26 +122,41 @@ public class Bridge {
     }
 
 
-    private static void clientDisconnect(SelectionKey key) throws IOException {
-        SocketChannel client = (SocketChannel) key.channel();
+    private static void clientDisconnect(SocketChannel client) throws IOException {
         int port = connectedClients.get(client);
         connections.remove(Integer.valueOf(port));
         connectedClients.remove(client);
         try {
             client.close();
         } catch (IOException e) {
+            // Log the error or handle it appropriately
             e.printStackTrace();
         }
         connection--;
         System.out.println("Client disconnected from port " + port);
     }
-    
+
     private static void Sltable(){
-        for(Map.Entry<String,SocketChannel> entry : SelfLearningtable.entrySet()){
-            String key = entry.getKey();
-            SocketChannel value = entry.getValue();
-            System.out.println("Key:"+ key + ", Value: " + value);
+        System.out.println("+---------------------+---------------------+-------------------+");
+        System.out.println("|    Source MAC      |      Port           | Time Left (seconds)|");
+        System.out.println("+---------------------+---------------------+-------------------+");
+
+        for (Map.Entry<String, SocketChannel> entry : SelfLearningtable.entrySet()) {
+            String sourceMacAddress = entry.getKey();
+            SocketChannel channel = entry.getValue();
+            long expirationTime = ExpirationTimes.getOrDefault(sourceMacAddress, 0L);
+            long timeLeft = Math.max(0, (expirationTime - System.currentTimeMillis()) / 1000);
+            int prt = 0;
+            try {
+                 prt = ((InetSocketAddress) channel.getRemoteAddress()).getPort();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+
+            System.out.printf("| %-19s | %-19s | %-17s |\n", sourceMacAddress, prt, timeLeft);
         }
+
+        System.out.println("+---------------------+---------------------+-------------------+");
     }
 
     public static void main(String[] args) throws IOException {
@@ -227,10 +198,22 @@ public class Bridge {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        createSymbolicLink(sd_address.getHostAddress(), Ipaddressfilepath);
-        createSymbolicLink(String.valueOf(port), Portaddress);
 
         System.out.println("Server started on IP address " + sd_address.getHostAddress() + " and on port " + port);
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("Shutting down gracefully...");
+            try {
+                // Close all connections and release resources
+                for (SocketChannel client : connectedClients.keySet()) {
+                    clientDisconnect(client);
+                }
+                // You might need to close other resources if any
+                // (e.g., selector, server socket channel, etc.)
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }));
+
         Thread userInputThread = new Thread(() -> {
             while (true) {
                 if (sc.hasNextLine()) {
@@ -239,13 +222,9 @@ public class Bridge {
                         Sltable();
                     }
                     }
-//                else if(sc.hasNextLine()) {
-//                    String userInput = sc.nextLine();
-//                    broadcastMessage(userInput);
-//                }
-
             }
         });
+
 
         // Start the user input thread
         userInputThread.start();
@@ -277,7 +256,7 @@ public class Bridge {
                             int bytesRead = channel.read(buffer);
                             if (bytesRead == -1) {
                                 SocketChannel client = (SocketChannel) key.channel();
-                                prt = ((InetSocketAddress) client.getRemoteAddress()).getPort();
+                                prt = connectedClients.get(channel);
                                 connections.remove(Integer.valueOf(prt));
                                 connectedClients.remove(prt);
                                 key.cancel();
@@ -294,15 +273,43 @@ public class Bridge {
                                 Ipframe ipdata = (Ipframe) receivedData.getIframe();
                                     String sourceMacAddress = receivedData.getSourceMacAddress();
                                     String destinationMacAddress = receivedData.getDestinationMacAddress();
-                                    SelfLearningtable.put(sourceMacAddress, channel);
-                                        //It is arp request
-                                        // Now, you can work with the receivedData object as if it were a Dataframe.
-                                        //String receivedMessage = receivedData.getData();
+                                if (!SelfLearningtable.containsKey(sourceMacAddress)) {
+                                    synchronized (lock) {
+                                        SelfLearningtable.put(sourceMacAddress, channel);
+                                    }
+                                    long expirationTime = System.currentTimeMillis() + EXPIRATION_TIME_MS;
+                                    ExpirationTimes.put(sourceMacAddress, expirationTime);
+
+                                    scheduler.scheduleAtFixedRate(() -> {
+                                        synchronized (lock) {
+                                            Iterator<Map.Entry<String, Long>> iterator = ExpirationTimes.entrySet().iterator();
+                                            while (iterator.hasNext()) {
+                                                Map.Entry<String, Long> entry = iterator.next();
+                                                String sourceMacAddres = entry.getKey();
+                                                long expirationTim = entry.getValue();
+
+                                                long currentTime = System.currentTimeMillis();
+                                                long timeLeft = expirationTim - currentTime;
+
+                                                if (timeLeft <= 0) {
+                                                    iterator.remove(); // Remove the entry using iterator to avoid ConcurrentModificationException
+                                                    SelfLearningtable.remove(sourceMacAddres);
+                                                    System.out.println("Self Learning table entry expired: " + sourceMacAddres);
+                                                }
+                                            }
+                                        }
+                                    }, 0, 1000,TimeUnit.MILLISECONDS);
+                                }
                                         if (SelfLearningtable.containsKey(destinationMacAddress)) {
+                                            synchronized (lock) {
+                                                ExpirationTimes.put(destinationMacAddress, System.currentTimeMillis() + EXPIRATION_TIME_MS);
+                                            }
                                             SocketChannel sd = null;
-                                            for ( Map.Entry<String,SocketChannel> ent : SelfLearningtable.entrySet()) {
-                                                if(ent.getKey().equals(destinationMacAddress)){
-                                                    sd = ent.getValue();
+                                            synchronized (lock) {
+                                                for (Map.Entry<String, SocketChannel> ent : SelfLearningtable.entrySet()) {
+                                                    if (ent.getKey().equals(destinationMacAddress)) {
+                                                        sd = ent.getValue();
+                                                    }
                                                 }
                                             }
                                             Sendstation(receivedData,sd);
@@ -310,8 +317,6 @@ public class Bridge {
                                             broadcastMessage(receivedData,channel);
                                         }
                                     System.out.println("Received: " + " src mac " + sourceMacAddress + " DestMAc " + destinationMacAddress + "  " + receivedData.getIframe());
-                                    //key.interestOps(SelectionKey.OP_WRITE);
-
                             }
 
                             buffer.clear();
@@ -329,7 +334,8 @@ public class Bridge {
 
                     }
                     if (!key.isValid()) {
-                        clientDisconnect(key);
+                        SocketChannel client = (SocketChannel) key.channel();
+                        clientDisconnect(client);
                     }
                 }
             }
