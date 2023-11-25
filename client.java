@@ -299,8 +299,8 @@ public class client {
 
                         System.exit(0);
                     }
-                    if(args[0].equals("-no")) {
-                        if (parts.length >= 3 && "send".equals(parts[0])) {
+                    else  if (parts.length >= 3 && "send".equals(parts[0])) {
+                            if(args[0].equals("-no")) {
                             String recipient = parts[1];
                             String message = String.join(" ", Arrays.copyOfRange(parts, 2, parts.length));
                             String Destinationip = Hosts.get(recipient);
@@ -583,7 +583,7 @@ public class client {
                                 System.out.println("Received message is"+" "+receivedObjec.getDframe().getData() );
                             }
                             else{
-                                if(args[1].equals("-route")) {
+                                if(args[0].equals("-route")) {
                                     String nexthop = null;
                                     String tnexthop = null;
                                     Sourcemac = null;
@@ -632,6 +632,7 @@ public class client {
                                         packetqueue.add(Qpack);
                                         arppack = new ARPframe.Builder("1").Sourcemac(Sourcemac).SourceIpaddress(sourceip).destinationIP(nexthopip).build();
                                         Arpreq = new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).ipframe(arppack).build();
+                                        Sendobject(Arpreq, sd);
                                     } else {
                                         synchronized (lock) {
                                             ExpirationTimes.put(((Ethernetframe) receivedObject).getSourceMacAddress(), System.currentTimeMillis() + EXPIRATION_TIME_MS);
@@ -678,8 +679,25 @@ public class client {
                                         }
                                         Arpreq = new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).DestinationMacAddress(Dmac).ipframe(receivedObjec).build();
                                         System.out.println("original packet is sent");
+                                        Sendobject(Arpreq, sd);
+                                        for (PacketQ packetout : packetqueue) {
+                                            if (packetout.getNextHop().equals(receivedObjec.getDestinationIp())) {
+                                                PacketQ packetpop = packetqueue.poll();
+                                                arppack = packetout.getIframe();
+                                                //String Dmac = null;
+                                                for (Map.Entry<String, String> ent : Arpcache.entrySet()) {
+                                                    if (ent.getKey().equals(arppack.getDestinationIp())) {
+                                                        Dmac = ent.getValue();
+                                                    }
+                                                    Arpreq = new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).DestinationMacAddress(Dmac).ipframe(arppack).build();
+                                                    Sendobject(Arpreq, sd);
+                                                }
+
+
+                                            }
+                                        }
                                     }
-                                    Sendobject(Arpreq, sd);
+
                                 }
 
                             }
