@@ -1,0 +1,24 @@
+vi#!/bin/sh -f
+
+cd $PWD
+
+rm .cs*
+
+xterm -T "BRIDGE cs1" -iconic -e java Bridge cs1 8 &
+xterm -T "BRIDGE cs2" -iconic -e java Bridge cs2 8 &
+xterm -T "BRIDGE cs3" -iconic -e java Bridge cs3 8 &
+sleep 5
+xterm -T "Host A" -e java client -no ifaces.a rtable.a hosts &
+sleep 1
+xterm -T "host B" -e java client -no ifaces.b rtable.b hosts &
+sleep 1
+xterm -T "host C" -e java client -no ifaces.c rtable.c hosts &
+sleep 1
+xterm -T "host D" -e java client -no ifaces.d rtable.d hosts &
+sleep 1
+xterm -T "host E" -e java client -no ifaces.e rtable.e hosts &
+sleep 5
+xterm -T "Router r1" -iconic -e java client -route ifaces.r1 rtable.r1 hosts &
+xterm -T "Router r2" -iconic -e java client -route ifaces.r2 rtable.r2 hosts &
+
+
