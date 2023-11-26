@@ -82,7 +82,7 @@ public class Bridge {
 
             sd.write(buffer);
         } catch (IOException e) {
-            e.printStackTrace();
+            System.out.println("Station is closed! Please wait to clear the cache");
         }
     }
 
@@ -344,7 +344,10 @@ public class Bridge {
                                                     }
                                                 }
                                             }
-                                            Sendstation(receivedData,sd);
+                                                Sendstation(receivedData, sd);
+
+                                                System.out.println("The station is closed! wait for cache to clear or retry");
+
                                         } else {
                                             broadcastMessage(receivedData,channel);
                                         }
@@ -355,9 +358,9 @@ public class Bridge {
                         }
                         catch (IOException e) {
                             // Handle the connection error gracefully
-                            key.cancel();
+                            //key.cancel();
                             channel.close();
-                            System.out.println("Connection error: " + e.getMessage());
+                            System.out.println("Packets are sent all at once! having trouble to deserialize!");
                         }
                         catch (ClassNotFoundException e) {
                             // Handle any exceptions here

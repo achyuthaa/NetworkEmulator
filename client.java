@@ -613,8 +613,16 @@ public class client {
                             else if(receivedObjec.getDestinationIp().equals(sourceip)){
                                 long expirationTime = System.currentTimeMillis() + EXPIRATION_TIME_MS;
                                 ExpirationTimes.put(((Ethernetframe) receivedObject).getSourceMacAddress(), expirationTime);
-
-                                System.out.println("Received message is"+" "+receivedObjec.getDframe().getData() );
+                                String Hostname = null;
+                                for (Map.Entry<String,String> hostt: Hosts.entrySet()
+                                     ) {
+                                    String Key = hostt.getKey();
+                                    String Value = hostt.getValue();
+                                    if(Value.equals(receivedObjec.getSourceIP())){
+                                        Hostname = Key;
+                                    }
+                                }
+                                System.out.println("Received message from "+Hostname+" is >> "+receivedObjec.getDframe().getData() );
                             }
                             else{
                                 if(args[0].equals("-route")) {
