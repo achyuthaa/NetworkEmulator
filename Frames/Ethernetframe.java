@@ -41,7 +41,7 @@ public class Ethernetframe implements Serializable {
         return aframe;
     }
 
-    @Override
+   /* @Override
     public String toString() {
         return "Ethernetframe{" +
                 "frame=" + frame +
@@ -51,7 +51,7 @@ public class Ethernetframe implements Serializable {
                 ", DestinationMacAddress='" + DestinationMacAddress + '\'' +
                 ", type=" + type +
                 '}';
-    }
+    }*/
 
     public static class Builder{
         private Dataframe frame;

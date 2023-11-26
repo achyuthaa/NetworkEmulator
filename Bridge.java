@@ -333,6 +333,9 @@ public class Bridge {
                                             synchronized (lock) {
                                                 ExpirationTimes.put(destinationMacAddress, System.currentTimeMillis() + EXPIRATION_TIME_MS);
                                             }
+                                            synchronized (lock) {
+                                                ExpirationTimes.put(sourceMacAddress, System.currentTimeMillis() + EXPIRATION_TIME_MS);
+                                            }
                                             SocketChannel sd = null;
                                             synchronized (lock) {
                                                 for (Map.Entry<String, SocketChannel> ent : SelfLearningtable.entrySet()) {
