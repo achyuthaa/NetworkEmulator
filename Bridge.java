@@ -358,9 +358,10 @@ public class Bridge {
                         }
                         catch (IOException e) {
                             // Handle the connection error gracefully
-                            //key.cancel();
+                            key.cancel();
                             channel.close();
                             System.out.println("Packets are sent all at once! having trouble to deserialize!");
+                            e.printStackTrace();
                         }
                         catch (ClassNotFoundException e) {
                             // Handle any exceptions here

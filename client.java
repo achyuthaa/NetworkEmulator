@@ -77,7 +77,7 @@ public class client {
             sd.write(buffer);
         } catch (IOException e) {
             sd.close();
-            e.printStackTrace();
+            System.out.println("Cannot Write to the Bridge! it's closed");
         }
     }
 
@@ -210,7 +210,7 @@ public class client {
 
         // Create a thread to handle user input
         Thread userInputThread = new Thread(() -> {
-            while (true) {
+            while (!connections.isEmpty()) {
                 if (sc.hasNextLine()) {
                     String userInput = sc.nextLine();
                     String[] parts = userInput.split(" ");
@@ -427,6 +427,7 @@ public class client {
                 }
             }
 
+
         });
 
         // Start the user input thread
@@ -453,10 +454,15 @@ public class client {
                     ByteBuffer buffer = ByteBuffer.allocate(10000);
                     int bytesRead = channel.read(buffer);
                     if (bytesRead == -1) {
+                        System.out.println("Connection closed by the Bridge at "+ ((SocketChannel) key.channel()).getRemoteAddress());
                         key.cancel();
                         channel.close();
                         connections.remove(channel);
-                        return;
+                        if(connections.isEmpty()){
+                            System.out.println("No active connections. Exiting program.");
+                            System.exit(0);
+                        }
+                        continue;
                     }
                     buffer.flip();
 
@@ -599,7 +605,7 @@ public class client {
                                                     .build();
                                             System.out.println("The packet is now sent");
                                             try {
-                                                Thread.sleep(2000);
+                                                Thread.sleep(1000);
                                             } catch (InterruptedException e) {
                                                 throw new RuntimeException(e);
                                             }
