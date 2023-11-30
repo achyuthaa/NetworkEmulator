@@ -57,6 +57,7 @@ public class Bridge {
                     channelsToDisconnect.add(client);
                 }
             } catch (IOException e) {
+                System.out.println("The station is closed! wait for cache to clear or retry");
                 e.printStackTrace();
                 channelsToDisconnect.add(client);
             }
@@ -91,13 +92,13 @@ public class Bridge {
     private static void clientAccept(SelectionKey key, Selector selector) throws IOException {
         ServerSocketChannel serverChannel = (ServerSocketChannel) key.channel();
         if (connection >= numPorts) {
-            SocketChannel client = serverChannel.accept();
-            client.configureBlocking(false);
-            ByteBuffer buffer = ByteBuffer.allocate(1024);
-            buffer.put("Reject".getBytes());
-            buffer.flip();
-            client.write(buffer);
-            client.close();
+           // SocketChannel client = serverChannel.accept();
+           // client.configureBlocking(false);
+           // ByteBuffer buffer = ByteBuffer.allocate(1024);
+           // buffer.put("Reject".getBytes());
+          //  buffer.flip();
+           // client.write(buffer);
+          //  client.close();
             System.out.println("Rejected Connection because of Reaching Max connections");
         } else {
             SocketChannel client = serverChannel.accept();
@@ -186,6 +187,11 @@ public class Bridge {
         String Portaddress = "." + lanName + ".port";
         // Create IP address file and write IP address
         File ipFile = new File(Ipaddressfilepath);
+        File portFile = new File(Portaddress);
+        if (ipFile.exists() || portFile.exists()) {
+            System.out.println("Name 'cs1' is already taken. Exiting...");
+            System.exit(0);
+        }
         try (FileWriter ipFileWriter = new FileWriter(ipFile)) {
             ipFileWriter.write(sd_address.getHostAddress());
         } catch (IOException e) {
@@ -193,7 +199,6 @@ public class Bridge {
         }
 
         // Create port file and write port
-        File portFile = new File(Portaddress);
         try (FileWriter portFileWriter = new FileWriter(portFile)) {
             portFileWriter.write(String.valueOf(port));
         } catch (IOException e) {
@@ -203,6 +208,14 @@ public class Bridge {
         System.out.println("Server started on IP address " + sd_address.getHostAddress() + " and on port " + port);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             System.out.println("Shutting down gracefully...");
+            System.out.println("Removing Bridge connection files...");
+            if (ipFile.exists()) {
+                ipFile.delete();
+            }
+
+            if (portFile.exists()) {
+                portFile.delete();
+            }
             try {
                 // Close all connections and release resources
                 for (SocketChannel client : connectedClients.keySet()) {
@@ -224,7 +237,13 @@ public class Bridge {
                     }
                     else if (userInput.equals("quit")) {
                         System.out.println("Removing all connections...");
+                        if (ipFile.exists()) {
+                            ipFile.delete();
+                        }
 
+                        if (portFile.exists()) {
+                            portFile.delete();
+                        }
                         for (SocketChannel client : connectedClients.keySet()) {
                             try {
                                 clientDisconnect(client);
@@ -346,9 +365,11 @@ public class Bridge {
                                             }
                                                 Sendstation(receivedData, sd);
 
-                                                System.out.println("The station is closed! wait for cache to clear or retry");
 
                                         } else {
+                                            synchronized (lock) {
+                                                ExpirationTimes.put(sourceMacAddress, System.currentTimeMillis() + EXPIRATION_TIME_MS);
+                                            }
                                             broadcastMessage(receivedData,channel);
                                         }
                                     System.out.println("Received: " + " src mac " + sourceMacAddress + " DestMAc " + destinationMacAddress + "  " + receivedData.getIframe());

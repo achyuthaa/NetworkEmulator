@@ -21,13 +21,14 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 public class client {
-    private static final int MAX_CONNECTION_ATTEMPTS = 5;
-    private static boolean connectionEstablished = false;
-    private static final int CONNECTION_INTERVAL_SECONDS = 2;
+    private static final int RETRY_INTERVAL_SECONDS = 2;
+    private static final int MAX_RETRIES = 5;
+    private static volatile boolean isRunning = true;
     static Selector selector;
     static Map<String, String[]> iptable = new ConcurrentHashMap<>();
     static List<SocketChannel> connections = new ArrayList<>();
     static Map<String, String> Hosts = new ConcurrentHashMap<>();
+    static ArrayList<String> ifaceslist = new ArrayList<>();
     static Map<String, String[]> rtable = new ConcurrentHashMap<>();
     static Map<String, String> Arpcache = new ConcurrentHashMap<>();
     static Map<String, SocketChannel> path = new ConcurrentHashMap<>();
@@ -46,13 +47,17 @@ public class client {
     public static void exitGracefully() {
         System.out.println("Closing connections gracefully...");
 
-        for (SocketChannel channel : connections) {
+        Iterator<SocketChannel> iterator = connections.iterator();
+        while (iterator.hasNext()) {
+            SocketChannel channel = iterator.next();
             try {
                 channel.close();
             } catch (IOException e) {
-                e.printStackTrace(); // Handle the exception according to your needs
+                throw new RuntimeException(e);
             }
+            iterator.remove();
         }
+
 
         System.out.println("Exiting program.");
         System.exit(0);
@@ -166,6 +171,12 @@ public class client {
     }
 
     public static void main(String[] args) throws IOException {
+        /*Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            exitGracefully();
+            System.out.println("Ctrl+C caught. Performing cleanup before exiting...");
+            isRunning = false;
+            // Perform cleanup operations here
+        }));*/
         //Host to IpMapping
         String inter = args[1];
         String rtab = args[2];
@@ -177,40 +188,11 @@ public class client {
         Scanner sc = new Scanner(System.in);
         String serverIP = null;
         int serverPort = 0;
-        selector = Selector.open();
 
-        for (Map.Entry<String, String[]> entry : iptable.entrySet()) {
-            String ifaces = entry.getKey();
-            String[] valuess = entry.getValue();
-            serverIP = null;
-            try {
-                serverIP = readSymbolicLink("." + valuess[3] + ".addr");
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-            serverPort = 0;
-            try {
-                serverPort = Integer.parseInt(readSymbolicLink("." + valuess[3] + ".port"));
-                serverss.put(serverIP, serverPort);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-
-            SocketChannel socketChannel = SocketChannel.open();
-            socketChannel.configureBlocking(false);
-
-            SocketAddress serverAddress = new InetSocketAddress(InetAddress.getByName(serverIP), serverPort);
-            socketChannel.connect(serverAddress);
-            connections.add(socketChannel);
-            socketChannel.register(selector, SelectionKey.OP_CONNECT);
-
-            // Add the SocketChannel to the path map
-            path.put(valuess[3], socketChannel);
-        }
 
         // Create a thread to handle user input
         Thread userInputThread = new Thread(() -> {
-            while (!connections.isEmpty()) {
+            while (!connections.isEmpty() && isRunning) {
                 if (sc.hasNextLine()) {
                     String userInput = sc.nextLine();
                     String[] parts = userInput.split(" ");
@@ -426,14 +408,103 @@ public class client {
                     }
                 }
             }
+            System.exit(0);
 
 
         });
-
         // Start the user input thread
+        for (Map.Entry<String, String[]> entry : iptable.entrySet()) {
+            String ifaces = entry.getKey();
+            String[] value = entry.getValue();
+            if(ifaceslist.contains(value[3])){
+                continue;
+            }
+            ifaceslist.add(value[3]);
+            /*for(int i=0;i<ifaceslist.size();i++){
+                System.out.println(ifaceslist.get(i));
+            }*/
+        }
+        int connect = 0;
+        Selector selector = Selector.open();
+        while(connect++ < 5 && !ifaceslist.isEmpty()){
+        System.out.println("Try number "+connect);
+        for (int i = 0;i<ifaceslist.size();i++) {
+            File ipFile = new File("."+ifaceslist.get(i)+".addr");
+            File portFile = new File("." + ifaceslist.get(i) + ".port");
+            if (!ipFile.exists() || !portFile.exists()) {
+                continue;
+            }
+            else {
+                try {
+                    serverIP = readSymbolicLink("." + ifaceslist.get(i) + ".addr");
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+                try {
+                    serverPort = Integer.parseInt(readSymbolicLink("." + ifaceslist.get(i) + ".port"));
+                    serverss.put(serverIP, serverPort);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+
+                SocketChannel socketChannel = SocketChannel.open();
+                socketChannel.configureBlocking(false);
+
+                SocketAddress serverAddress = new InetSocketAddress(InetAddress.getByName(serverIP), serverPort);
+                socketChannel.connect(serverAddress);
+                if (socketChannel.isConnectionPending()) {
+                    socketChannel.finishConnect();
+                }
+                connections.add(socketChannel);
+                socketChannel.register(selector, SelectionKey.OP_READ);
+
+                // Add the SocketChannel to the path map
+                path.put(ifaceslist.get(i), socketChannel);
+            }
+        }
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+            selector.selectNow();
+            Set<SelectionKey> selectedKeys = selector.selectedKeys();
+            Iterator<SelectionKey> keyIterator = selectedKeys.iterator();
+            while (keyIterator.hasNext()) {
+                    SelectionKey key = keyIterator.next();
+                    keyIterator.remove();
+                    if (key.isReadable()) {
+                        SocketChannel channel = (SocketChannel) key.channel();
+                        ByteBuffer buffer = ByteBuffer.allocate(10000);
+                        int bytesRead = channel.read(buffer);
+                        //System.out.println(key.channel());
+                        if (bytesRead > 0) {
+                            System.out.println("Accept");
+                            for (Map.Entry<String,SocketChannel> check : path.entrySet()
+                                 ) {
+                                if(check.getValue().equals(key.channel())){
+                                    System.out.println("connected to "+check.getKey());
+                                    ifaceslist.remove(check.getKey());
+                                }
+                                /*for(int i =0;i<ifaceslist.size();i++){
+                                    System.out.println(ifaceslist.get(i));
+                                }*/
+                            }
+                        }
+                    }
+            }
+       }
+        if(connections.isEmpty()){
+           System.out.println("Not connected to any bridge hence exiting");
+           System.exit(0);
+        }
+        Set<String> uniqueElements = new HashSet<>(ifaceslist);
+        for (String element : uniqueElements) {
+            System.out.println("Reject from Bride "+element);
+        }
+        System.out.println();
         userInputThread.start();
-        int connectionAttempts = 0;
-        ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
+
         while (true) {
             selector.select();
             Set<SelectionKey> selectedKeys = selector.selectedKeys();
@@ -443,13 +514,13 @@ public class client {
                 SelectionKey key = keyIterator.next();
                 keyIterator.remove();
 
-                if (key.isConnectable()) {
+                /*if (key.isConnectable()) {
                     SocketChannel channel = (SocketChannel) key.channel();
                     if (channel.isConnectionPending()) {
                         channel.finishConnect();
                     }
                     channel.register(selector, SelectionKey.OP_READ);
-                } else if (key.isReadable()) {
+                }*/ if (key.isReadable()) {
                     SocketChannel channel = (SocketChannel) key.channel();
                     ByteBuffer buffer = ByteBuffer.allocate(10000);
                     int bytesRead = channel.read(buffer);
