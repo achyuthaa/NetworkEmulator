@@ -171,12 +171,21 @@ public class client {
     }
 
     public static void main(String[] args) throws IOException {
-        /*Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            exitGracefully();
-            System.out.println("Ctrl+C caught. Performing cleanup before exiting...");
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             isRunning = false;
+            Iterator<SocketChannel> iterator = connections.iterator();
+            while (iterator.hasNext()) {
+                SocketChannel channel = iterator.next();
+                try {
+                    channel.close();
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+                iterator.remove();
+            }
+            System.out.println("Shutting down gracefully...");
             // Perform cleanup operations here
-        }));*/
+        }));
         //Host to IpMapping
         String inter = args[1];
         String rtab = args[2];
@@ -453,13 +462,14 @@ public class client {
                 SocketAddress serverAddress = new InetSocketAddress(InetAddress.getByName(serverIP), serverPort);
                 socketChannel.connect(serverAddress);
                 if (socketChannel.isConnectionPending()) {
-                    socketChannel.finishConnect();
-                }
-                connections.add(socketChannel);
-                socketChannel.register(selector, SelectionKey.OP_READ);
+                    if(socketChannel.finishConnect()){
+                        connections.add(socketChannel);
+                        socketChannel.register(selector, SelectionKey.OP_READ);
 
-                // Add the SocketChannel to the path map
-                path.put(ifaceslist.get(i), socketChannel);
+                        // Add the SocketChannel to the path map
+                        path.put(ifaceslist.get(i), socketChannel);
+                    }
+                }
             }
         }
             try {
@@ -525,8 +535,7 @@ public class client {
                     ByteBuffer buffer = ByteBuffer.allocate(10000);
                     int bytesRead = channel.read(buffer);
                     if (bytesRead == -1) {
-                        System.out.println("Connection closed by the Bridge at "+ ((SocketChannel) key.channel()).getRemoteAddress());
-                        key.cancel();
+                        //System.out.println("Connection closed by the Bridge at "+ ((SocketChannel) key.channel()).getRemoteAddress());
                         channel.close();
                         connections.remove(channel);
                         if(connections.isEmpty()){
@@ -537,10 +546,10 @@ public class client {
                     }
                     buffer.flip();
 
-                    if (StandardCharsets.UTF_8.decode(buffer).toString().equals("Accept")) {
+                    /*if (StandardCharsets.UTF_8.decode(buffer).toString().equals("Accept")) {
                         System.out.println("Accept");
                         continue;
-                    }
+                    }*/
 
                     try {
                         ObjectInputStream objectInputStream = new ObjectInputStream(new ByteArrayInputStream(buffer.array()));

@@ -13,10 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class Bridge {
 
@@ -91,17 +88,18 @@ public class Bridge {
 
     private static void clientAccept(SelectionKey key, Selector selector) throws IOException {
         ServerSocketChannel serverChannel = (ServerSocketChannel) key.channel();
+        SocketChannel client = serverChannel.accept();
         if (connection >= numPorts) {
-           // SocketChannel client = serverChannel.accept();
-           // client.configureBlocking(false);
+            //SocketChannel client = serverChannel.reject();
+           //client.configureBlocking(false);
            // ByteBuffer buffer = ByteBuffer.allocate(1024);
            // buffer.put("Reject".getBytes());
           //  buffer.flip();
            // client.write(buffer);
-          //  client.close();
+            client.close();
+            //key.cancel();
             System.out.println("Rejected Connection because of Reaching Max connections");
         } else {
-            SocketChannel client = serverChannel.accept();
             connection++;
             InetSocketAddress add = (InetSocketAddress) client.getRemoteAddress();
             String clientIP = add.getAddress().getHostAddress();
@@ -278,7 +276,9 @@ public class Bridge {
         userInputThread.start();
         try {
             Selector selector = Selector.open();
-            sd_sock.register(selector, SelectionKey.OP_ACCEPT);
+                if(connection<numPorts) {
+                    sd_sock.register(selector, SelectionKey.OP_ACCEPT);
+                }
 
             while (true) {
                 int ready = selector.select();
@@ -292,10 +292,9 @@ public class Bridge {
                 while (keyIterator.hasNext()) {
                     SelectionKey key = keyIterator.next();
                     keyIterator.remove();
-
-                    if (key.isAcceptable()) {
-                        clientAccept(key, selector);
-                    }
+                        if (key.isAcceptable()) {
+                            clientAccept(key, selector);
+                        }
                     if (key.isReadable()) {
                         SocketChannel channel = (SocketChannel) key.channel();
                         ByteBuffer buffer = ByteBuffer.allocate(1024);
@@ -307,6 +306,7 @@ public class Bridge {
                                 prt = connectedClients.get(channel);
                                 connections.remove(Integer.valueOf(prt));
                                 connectedClients.remove(prt);
+                                connection--;
                                 key.cancel();
                                 channel.close();
                                 System.out.println("closed");
