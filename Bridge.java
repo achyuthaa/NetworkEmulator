@@ -31,9 +31,6 @@ public class Bridge {
     static int numPorts = 0;
     static int connection = 0;
     private static void broadcastMessage(Ethernetframe frame, SocketChannel senderChannel) throws IOException {
-        for (Integer client : connections) {
-            System.out.println(client);
-        }
 
         ByteBuffer buffer = ByteBuffer.allocate(10000);
 
@@ -187,7 +184,7 @@ public class Bridge {
         File ipFile = new File(Ipaddressfilepath);
         File portFile = new File(Portaddress);
         if (ipFile.exists() || portFile.exists()) {
-            System.out.println("Name 'cs1' is already taken. Exiting...");
+            System.out.println("Name "+  lanName +" is already taken. Exiting...");
             System.exit(0);
         }
         try (FileWriter ipFileWriter = new FileWriter(ipFile)) {
@@ -230,7 +227,7 @@ public class Bridge {
             while (true) {
                 if (sc.hasNextLine()) {
                     String userInput = sc.nextLine();
-                    if (userInput.equals("show sltable")) {
+                    if (userInput.equals("show sl")) {
                         Sltable();
                     }
                     else if (userInput.equals("quit")) {
@@ -244,8 +241,8 @@ public class Bridge {
                         }
                         for (SocketChannel client : connectedClients.keySet()) {
                             try {
+                                //System.out.println("Disconnected client: " + client.getRemoteAddress());
                                 clientDisconnect(client);
-                                System.out.println("Disconnected client: " + client.getRemoteAddress());
                             } catch (IOException e) {
                                 e.printStackTrace();
                                 // Handle the exception appropriately, log it, and continue with other clients
@@ -303,9 +300,18 @@ public class Bridge {
                             int bytesRead = channel.read(buffer);
                             if (bytesRead == -1) {
                                 SocketChannel client = (SocketChannel) key.channel();
+                                /*for (Map.Entry<String, SocketChannel> ent : SelfLearningtable.entrySet()) {
+                                      String mac = ent.getKey();
+                                      SocketChannel sckchannel = ent.getValue();
+                                      if(sckchannel.equals(client)){
+                                          SelfLearningtable.remove(mac);
+                                      }
+
+                                }*/
+
                                 prt = connectedClients.get(channel);
                                 connections.remove(Integer.valueOf(prt));
-                                connectedClients.remove(prt);
+                                connectedClients.remove(client);
                                 connection--;
                                 key.cancel();
                                 channel.close();
@@ -372,7 +378,17 @@ public class Bridge {
                                             }
                                             broadcastMessage(receivedData,channel);
                                         }
-                                    System.out.println("Received: " + " src mac " + sourceMacAddress + " DestMAc " + destinationMacAddress + "  " + receivedData.getIframe());
+                                        if(receivedData.getIframe() instanceof ARPframe) {
+                                            if (((ARPframe) receivedData.getIframe()).getArptype().equals("1")) {
+                                                System.out.println("Arprequest packet received and sent");
+                                            } else if (((ARPframe) receivedData.getIframe()).getArptype().equals("2")) {
+                                                System.out.println("Arpresponse packet received and sent");
+                                            }
+                                        }
+                                        else{
+                                            System.out.println("This is the Ippacket");
+                                        }
+                                System.out.println("Received: " + " src mac " + sourceMacAddress + " DestMAc " + destinationMacAddress + "  " + receivedData.getIframe());
                             }
 
                             buffer.clear();

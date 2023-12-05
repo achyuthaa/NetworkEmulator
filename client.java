@@ -205,7 +205,7 @@ public class client {
                 if (sc.hasNextLine()) {
                     String userInput = sc.nextLine();
                     String[] parts = userInput.split(" ");
-                    if (userInput.equals("show hosts")) {
+                    if (userInput.equals("show host")) {
                         // Display the stored information in a table-like format
                         System.out.println("+-------------------+-------------------+");
                         System.out.println("|     Host Name    |     IP Address    |");
@@ -294,7 +294,16 @@ public class client {
                             if(args[0].equals("-no")) {
                             String recipient = parts[1];
                             String message = String.join(" ", Arrays.copyOfRange(parts, 2, parts.length));
-                            String Destinationip = Hosts.get(recipient);
+                            String Destinationip = null;
+                            if(Hosts.containsKey(recipient)) {
+                                Destinationip = Hosts.get(recipient);
+                            }
+                            else{
+                                System.out.println("Host not found!");
+                                continue;
+                            }
+
+
                             //System.out.println("Destinatip check" + " " + Destinationip);
                             sourceip = "";
                             String nexthop = null;
@@ -708,7 +717,20 @@ public class client {
                                         Hostname = Key;
                                     }
                                 }
-                                System.out.println("Received message from "+Hostname+" is >> "+receivedObjec.getDframe().getData() );
+                                if(args[0].equals("-route")){
+                                    System.out.println("Packet forwarding to the next Hop...");
+                                }
+                                else {
+                                    System.out.println("Received message from " + Hostname + " is >> " + receivedObjec.getDframe().getData());
+                                    System.out.println("");
+                                        System.out.println("+-------------------------------+");
+                                        System.out.println("| Packet Details                |");
+                                        System.out.println("+-------------------------------+");
+                                        System.out.println("| Source IP  : " + receivedObjec.getSourceIP());
+                                        System.out.println("| Dest IP    : " + receivedObjec.getDestinationIp());
+                                        System.out.println("| Data       : " + receivedObjec.getDframe().getData());
+                                        System.out.println("+-------------------------------+");
+                                }
                             }
                             else{
                                 if(args[0].equals("-route")) {
