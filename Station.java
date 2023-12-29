@@ -1,3 +1,4 @@
+//By Achyuthanwesh Vanga[AV22Z], Namrata Mallampati[NM22Y]
 import Frames.*;
 
 import java.io.*;
@@ -20,7 +21,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
-public class client {
+public class Station {
     private static final int RETRY_INTERVAL_SECONDS = 2;
     private static final int MAX_RETRIES = 5;
     private static volatile boolean isRunning = true;
@@ -33,7 +34,7 @@ public class client {
     static Map<String, String> Arpcache = new ConcurrentHashMap<>();
     static Map<String, SocketChannel> path = new ConcurrentHashMap<>();
     private static final Map<String, Long> ExpirationTimes = new HashMap<>();
-    private static final long EXPIRATION_TIME_MS = 30000; // 60 seconds
+    private static final long EXPIRATION_TIME_MS = 60000; // 60 seconds
     private static final Object lock = new Object();
     private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     static Map<String, Integer> serverss = new HashMap<>();
@@ -87,7 +88,7 @@ public class client {
     }
 
     public static void Getrtables(String rtab) {
-        String filePath = "RoutingTables/" + rtab;
+        String filePath =  rtab;
 
         // Create a map to store the rtable data
 
@@ -119,7 +120,7 @@ public class client {
     }
 
     public static void Getiface(String inter) {
-        String filePath = "Interfaces/" + inter;
+        String filePath =  inter;
 
         try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
             String line;
@@ -146,7 +147,7 @@ public class client {
     }
 
     public static void Gethosts(String host) {
-        String hostpath = "Hosts/" + host;
+        String hostpath =  host;
         try (Stream<String> lines = Files.lines(Paths.get(hostpath))) {
             lines.forEach(line -> {
                 String[] parts = line.split("\t");
@@ -377,35 +378,6 @@ public class client {
 
                                 System.out.println("The info exists in the arpcache, and the packet is sent to the next hop");
 
-                                /*while (iterator.hasNext()) {
-                                    PacketQ packetout = iterator.next();
-
-                                    if (packetout.getNextHop().equals(nexthopip)) {
-                                        for (Map.Entry<String, String> ent : Arpcache.entrySet()) {
-                                            if (ent.getKey().equals(packetout.getNextHop())) {
-                                                Dmac = ent.getValue();
-                                                iterator.remove(); // Safely remove the current element from the collection
-
-                                                arppack = packetout.getIframe();
-                                                Arpreq = new Ethernetframe.Builder()
-                                                        .getType(1)
-                                                        .SourceMacAddress(Sourcemac)
-                                                        .DestinationMacAddress(Dmac)
-                                                        .ipframe(arppack)
-                                                        .build();
-
-                                                System.out.println("The info exists in the arpcache, and the packet is sent to the next hop");
-                                                //System.out.println("Q sent");
-
-                                                try {
-                                                    Sendobject(Arpreq, sd);
-                                                } catch (IOException e) {
-                                                    System.out.println("Connection closed");
-                                                }
-                                            }
-                                        }
-                                    }
-                                } */
                                 try {
                                     Sendobject(Arpreq, sd);
                                 } catch (IOException e) {
@@ -438,9 +410,6 @@ public class client {
                 continue;
             }
             ifaceslist.add(value[3]);
-            /*for(int i=0;i<ifaceslist.size();i++){
-                System.out.println(ifaceslist.get(i));
-            }*/
         }
         int connect = 0;
         Selector selector = Selector.open();
@@ -505,9 +474,6 @@ public class client {
                                     System.out.println("connected to "+check.getKey());
                                     ifaceslist.remove(check.getKey());
                                 }
-                                /*for(int i =0;i<ifaceslist.size();i++){
-                                    System.out.println(ifaceslist.get(i));
-                                }*/
                             }
                         }
                     }
@@ -519,7 +485,7 @@ public class client {
         }
         Set<String> uniqueElements = new HashSet<>(ifaceslist);
         for (String element : uniqueElements) {
-            System.out.println("Reject from Bride "+element);
+            System.out.println("Reject from Bridge "+element);
         }
         System.out.println();
         userInputThread.start();
@@ -533,13 +499,7 @@ public class client {
                 SelectionKey key = keyIterator.next();
                 keyIterator.remove();
 
-                /*if (key.isConnectable()) {
-                    SocketChannel channel = (SocketChannel) key.channel();
-                    if (channel.isConnectionPending()) {
-                        channel.finishConnect();
-                    }
-                    channel.register(selector, SelectionKey.OP_READ);
-                }*/ if (key.isReadable()) {
+                if (key.isReadable()) {
                     SocketChannel channel = (SocketChannel) key.channel();
                     ByteBuffer buffer = ByteBuffer.allocate(10000);
                     int bytesRead = channel.read(buffer);
@@ -555,10 +515,6 @@ public class client {
                     }
                     buffer.flip();
 
-                    /*if (StandardCharsets.UTF_8.decode(buffer).toString().equals("Accept")) {
-                        System.out.println("Accept");
-                        continue;
-                    }*/
 
                     try {
                         ObjectInputStream objectInputStream = new ObjectInputStream(new ByteArrayInputStream(buffer.array()));
@@ -595,13 +551,13 @@ public class client {
 
 
                                     }
-                                    synchronized (lock) {
+                                  /*  synchronized (lock) {
                                         Arpcache.put(arpsip,arpsrc);
                                     }
                                     long expirationTime = System.currentTimeMillis() + EXPIRATION_TIME_MS;
                                     synchronized (lock) {
                                         ExpirationTimes.put(arpsrc, expirationTime);
-                                    }
+                                    }*/
 
                                     scheduler.scheduleAtFixedRate(() -> {
                                         synchronized (lock) {
@@ -721,15 +677,21 @@ public class client {
                                     System.out.println("Packet forwarding to the next Hop...");
                                 }
                                 else {
-                                    System.out.println("Received message from " + Hostname + " is >> " + receivedObjec.getDframe().getData());
-                                    System.out.println("");
                                         System.out.println("+-------------------------------+");
                                         System.out.println("| Packet Details                |");
                                         System.out.println("+-------------------------------+");
-                                        System.out.println("| Source IP  : " + receivedObjec.getSourceIP());
-                                        System.out.println("| Dest IP    : " + receivedObjec.getDestinationIp());
-                                        System.out.println("| Data       : " + receivedObjec.getDframe().getData());
+                                        System.out.println("Source IP  : " + receivedObjec.getSourceIP());
+                                        System.out.println("Dest IP    : " + receivedObjec.getDestinationIp());
+                                        System.out.println("Data       : " + receivedObjec.getDframe().getData());
                                         System.out.println("+-------------------------------+");
+                                    System.out.println("");
+                                    if(Hostname.equals("Acs1")){
+                                        Hostname = "A";
+                                    }
+                                    if(Hostname.equals("Acs2")){
+                                        Hostname = "A";
+                                    }
+                                    System.out.println("Received message from " + Hostname + " is >> " + receivedObjec.getDframe().getData());
                                 }
                             }
                             else{
@@ -789,40 +751,6 @@ public class client {
                                         Sendobject(Arpreq, sd);
                                     } else {
                                         String Dmac = null;
-                                        PacketQ packtosend = null;
-                                        //SocketChannel sd = path.get(bri);
-                                  /*  //Arpreq =  new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).DestinationMacAddress(Dmac).ipframe(receivedObjec).build();
-                                    System.out.println("original packet is sent");
-                                    SocketChannel sd = path.get(bri);
-                                    for (PacketQ Qpac : packetqueue
-                                    ) {
-                                        if (Qpac.getNextHop().equals(nexthopip)) {
-                                            packtosend = packetqueue.poll();
-                                            for (Map.Entry<String, String> ent : Arpcache.entrySet()) {
-                                                if (ent.getKey().equals(receivedObjec.getDestinationIp())) {
-                                                    Dmac = ent.getValue();
-                                                }
-                                            }
-                                            Ipframe packet = packtosend.getIframe();
-                                            Ethernetframe packready = new Ethernetframe.Builder().getType(0).DestinationMacAddress(Dmac).SourceMacAddress(Sourcemac).ipframe(packet).build();
-                                            //SocketChannel sd = path.get(bri);
-                                            Sendobject(packready, sd);
-                                        }
-                                    }
-                                    //System.out.println("going here");
-                                /*for (PacketQ packetout: packetqueue) {
-                                    if(packetout.getNextHop().equals(pack.getDestinationIp())){
-                                        PacketQ packetpop = packetqueue.poll();
-                                        arppack = packetout.getIframe();
-                                        String Dmac = null;
-                                        for ( Map.Entry<String,String> ent: Arpcache.entrySet()) {
-                                            if(ent.getKey().equals(arppack.getDestinationIp())){
-                                                Dmac = ent.getValue();
-                                            }
-                                        }
-
-                                    }
-                                }*/
                                         for (Map.Entry<String, String> ent : Arpcache.entrySet()) {
                                             if (ent.getKey().equals(nexthopip)) {
                                                 Dmac = ent.getValue();
@@ -837,25 +765,47 @@ public class client {
                                         //System.out.println("original packet is sent");
                                         Sendobject(Arpreq, sd);
 
-                                        /*for (PacketQ packetout : packetqueue) {
-                                            if (packetout.getNextHop().equals(receivedObjec.getDestinationIp())) {
-                                                PacketQ packetpop = packetqueue.poll();
-                                                arppack = packetout.getIframe();
-                                                //String Dmac = null;
-                                                for (Map.Entry<String, String> ent : Arpcache.entrySet()) {
-                                                    if (ent.getKey().equals(arppack.getDestinationIp())) {
-                                                        Dmac = ent.getValue();
-                                                    }
-                                                    Arpreq = new Ethernetframe.Builder().getType(1).SourceMacAddress(Sourcemac).DestinationMacAddress(Dmac).ipframe(arppack).build();
-                                                    Sendobject(Arpreq, sd);
-                                                }
-
-
-                                            }
-                                        }
-                                        */
                                     }
 
+                                }
+                                else{
+                                    String Hostname = null;
+                                    for (Map.Entry<String,String> hostt: Hosts.entrySet()
+                                    ) {
+                                        String Key = hostt.getKey();
+                                        String Value = hostt.getValue();
+                                        if(Value.equals(receivedObjec.getSourceIP())){
+                                            Hostname = Key;
+                                        }
+                                    }
+                                    for (Map.Entry<String, String[]> entry : iptable.entrySet()) {
+                                        String values[] = entry.getValue();
+                                        if (values[0].equals(receivedObjec.getDestinationIp())) {
+                                            Sourcemac = values[2];
+                                            sourceip = values[0];
+
+                                            System.out.println("+-------------------------------+");
+                                            System.out.println("| Packet Details                |");
+                                            System.out.println("+-------------------------------+");
+                                            System.out.println("Source IP  : " + receivedObjec.getSourceIP());
+                                            System.out.println("Dest IP    : " + receivedObjec.getDestinationIp());
+                                            System.out.println("Data       : " + receivedObjec.getDframe().getData());
+                                            System.out.println("+-------------------------------+");
+                                            System.out.println("");
+                                            if(Hostname.equals("Acs1")){
+                                                Hostname = "A";
+                                            }
+                                            if(Hostname.equals("Acs2")){
+                                                Hostname = "A";
+                                            }
+                                            System.out.println("Received message from " + Hostname + " is >> " + receivedObjec.getDframe().getData());
+                                            break;
+                                        }
+
+                                    }
+                                    /*System.out.println("Ip packet doesnot belong here... dropping");
+                                    System.out.println(receivedObjec.getDestinationIp());
+                                    System.out.println(sourceip);*/
                                 }
 
                             }

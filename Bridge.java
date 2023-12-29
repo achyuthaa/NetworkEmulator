@@ -1,3 +1,4 @@
+//By Achyuthanwesh Vanga[AV22Z], Namrata Mallampati[NM22Y]
 import Frames.ARPframe;
 import Frames.Dataframe;
 import Frames.Ethernetframe;
@@ -23,7 +24,7 @@ public class Bridge {
     static ArrayList<Integer> connections = new ArrayList<>();
     static HashMap<String,String> station = new HashMap<>();
     private static final Map<String, Long> ExpirationTimes = new HashMap<>();
-    private static final long EXPIRATION_TIME_MS = 30000; // 60 seconds
+    private static final long EXPIRATION_TIME_MS = 60000; // 60 seconds
     static HashMap<String,SocketChannel> SelfLearningtable = new HashMap<>();
     private static final Object lock = new Object();
     private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
@@ -300,14 +301,18 @@ public class Bridge {
                             int bytesRead = channel.read(buffer);
                             if (bytesRead == -1) {
                                 SocketChannel client = (SocketChannel) key.channel();
-                                /*for (Map.Entry<String, SocketChannel> ent : SelfLearningtable.entrySet()) {
-                                      String mac = ent.getKey();
-                                      SocketChannel sckchannel = ent.getValue();
-                                      if(sckchannel.equals(client)){
-                                          SelfLearningtable.remove(mac);
-                                      }
 
-                                }*/
+                                Iterator<Map.Entry<String, SocketChannel>> iterator = SelfLearningtable.entrySet().iterator();
+                                while (iterator.hasNext()) {
+                                    Map.Entry<String, SocketChannel> entry = iterator.next();
+                                    String mac = entry.getKey();
+                                    SocketChannel sckchannel = entry.getValue();
+
+                                    if (sckchannel.equals(client)) {
+                                        iterator.remove(); // Safely remove the current entry
+                                    }
+                                }
+
 
                                 prt = connectedClients.get(channel);
                                 connections.remove(Integer.valueOf(prt));
@@ -369,6 +374,7 @@ public class Bridge {
                                                     }
                                                 }
                                             }
+                                                System.out.println("Sending to station");
                                                 Sendstation(receivedData, sd);
 
 
@@ -376,6 +382,7 @@ public class Bridge {
                                             synchronized (lock) {
                                                 ExpirationTimes.put(sourceMacAddress, System.currentTimeMillis() + EXPIRATION_TIME_MS);
                                             }
+                                            System.out.println("broadcasting");
                                             broadcastMessage(receivedData,channel);
                                         }
                                         if(receivedData.getIframe() instanceof ARPframe) {
